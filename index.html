@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="可拖拽、可执行的 Scratch 风格四值逻辑处理器">
+  <title>逻辑工坊 · T/F/U/I 推理器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <div>
+          <p class="eyebrow">LOGIC WORKSHOP</p>
+          <h1>逻辑工坊</h1>
+        </div>
+      </div>
+
+      <div class="topbar-actions" aria-label="工作区操作">
+        <span class="run-status" id="run-status" data-state="idle">
+          <span class="status-dot"></span>
+          <span>等待运行</span>
+        </span>
+        <button class="button button-ghost" id="example-button" type="button">载入示例</button>
+        <button class="button button-ghost" id="text-button" type="button">文字表示</button>
+        <button class="button button-ghost danger" id="clear-button" type="button">清空</button>
+        <button class="button button-run" id="run-button" type="button">
+          <span class="play-icon" aria-hidden="true"></span>
+          运行逻辑
+        </button>
+      </div>
+    </header>
+
+    <main class="editor-layout">
+      <aside class="panel library-panel" aria-labelledby="library-heading">
+        <div class="panel-heading library-heading">
+          <div>
+            <p class="section-kicker">BLOCKS</p>
+            <h2 id="library-heading">积木仓库</h2>
+          </div>
+          <span class="count-badge">12 种</span>
+        </div>
+        <p class="library-tip">拖动积木到工作区，或点击积木快速添加。</p>
+        <div id="block-library" class="block-library"></div>
+      </aside>
+
+      <section class="panel workspace-panel" aria-labelledby="workspace-heading">
+        <div class="panel-heading workspace-heading">
+          <div>
+            <p class="section-kicker">WORKSPACE</p>
+            <h2 id="workspace-heading">逻辑工作区</h2>
+          </div>
+          <div class="workspace-meta">
+            <span id="command-count">0 条指令</span>
+            <span class="keyboard-hint">双击积木可删除</span>
+          </div>
+        </div>
+
+        <div class="workspace-scroll">
+          <div id="workspace" class="workspace" data-accept="command" tabindex="0" aria-label="指令投放区">
+            <div class="workspace-grid" aria-hidden="true"></div>
+            <div class="empty-workspace" id="empty-workspace">
+              <div class="empty-illustration" aria-hidden="true">
+                <span class="ghost-block ghost-command"></span>
+                <span class="ghost-block ghost-predicate"></span>
+                <span class="ghost-block ghost-value"></span>
+              </div>
+              <h3>把第一块逻辑积木放在这里</h3>
+              <p>从左侧拖入“赋值”或“回答”指令，开始搭建推理流程。</p>
+              <button class="inline-action" id="empty-example-button" type="button">载入一个完整示例</button>
+            </div>
+            <div id="command-stack" class="command-stack" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <div class="trash-zone" id="trash-zone" aria-label="积木删除区">
+          <span class="trash-icon" aria-hidden="true"></span>
+          <span>拖到这里删除</span>
+        </div>
+      </section>
+
+      <aside class="inspector-column">
+        <section class="panel variables-panel" aria-labelledby="variables-heading">
+          <div class="panel-heading compact">
+            <div>
+              <p class="section-kicker">STATE</p>
+              <h2 id="variables-heading">变量状态</h2>
+            </div>
+            <span class="count-badge" id="variable-count">0</span>
+          </div>
+          <div class="variable-list" id="variable-list">
+            <div class="empty-small">
+              <span>$</span>
+              <p>运行赋值指令后，变量会显示在这里。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel results-panel" aria-labelledby="results-heading">
+          <div class="panel-heading compact">
+            <div>
+              <p class="section-kicker">OUTPUT</p>
+              <h2 id="results-heading">回答 / 控制台</h2>
+            </div>
+            <span class="count-badge" id="result-count">0</span>
+          </div>
+          <div class="result-tabs" role="tablist" aria-label="回答与控制台切换">
+            <button class="result-tab is-active" id="answer-tab" type="button" role="tab" aria-selected="true" aria-controls="answer-pane" data-target="answer">回答</button>
+            <button class="result-tab" id="console-tab" type="button" role="tab" aria-selected="false" aria-controls="console-pane" data-target="console">控制台</button>
+          </div>
+
+          <div class="result-pane" id="answer-pane" role="tabpanel" aria-labelledby="answer-tab">
+            <div class="result-list answer-list" id="answer-list" aria-live="polite">
+              <div class="empty-small answer-empty">
+                <span>?</span>
+                <p>“回答”指令的推理结果会出现在这里。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="result-pane" id="console-pane" role="tabpanel" aria-labelledby="console-tab" hidden>
+            <div class="console-log" id="console-log" aria-live="polite">
+              <div class="empty-small console-empty">
+                <span>&gt;_</span>
+                <p>运行后，指令执行轨迹、报错与诊断信息会出现在这里。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="logic-legend" aria-label="四值逻辑图例">
+            <span data-logic="T"><b>T</b> 是</span>
+            <span data-logic="F"><b>F</b> 否</span>
+            <span data-logic="U"><b>U</b> 不确定</span>
+            <span data-logic="I"><b>I</b> 无法回答</span>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="text-modal" id="text-modal" hidden role="dialog" aria-modal="true" aria-labelledby="text-modal-title">
+    <div class="text-modal-backdrop" data-close></div>
+    <div class="text-modal-content">
+      <header class="text-modal-head">
+        <div>
+          <p class="section-kicker">TEXT FORMAT</p>
+          <h2 id="text-modal-title">积木块的文字表示</h2>
+        </div>
+        <button class="icon-button" data-close type="button" aria-label="关闭">×</button>
+      </header>
+      <p class="text-modal-tip">
+        使用 <code>( )</code> 嵌套变量积木、<code>&lt; &gt;</code> 表示六边形判断积木、<code>{ }</code> 声明循环作用域。<br>
+        示例：<code>[重复 (3) { [回答 &lt;(从(1)到(6)的随机变量) 大于 (3) 吗?&gt;] }]</code>
+      </p>
+      <textarea id="text-input" class="text-input" spellcheck="false" aria-label="文字表示编辑区"></textarea>
+      <div class="text-modal-errors" id="text-errors" aria-live="polite"></div>
+      <footer class="text-modal-foot">
+        <button class="button button-ghost" id="text-copy" type="button">复制到剪贴板</button>
+        <span class="text-modal-spacer"></span>
+        <button class="button button-ghost" data-close type="button">取消</button>
+        <button class="button button-run" id="text-apply" type="button">应用到工作区</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="logic-engine.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
