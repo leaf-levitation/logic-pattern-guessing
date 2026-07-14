@@ -196,7 +196,17 @@
     textInput: document.querySelector("#text-input"),
     textApply: document.querySelector("#text-apply"),
     textCopy: document.querySelector("#text-copy"),
-    textErrors: document.querySelector("#text-errors")
+    textErrors: document.querySelector("#text-errors"),
+    levelSelect: document.querySelector("#level-select"),
+    levelHint: document.querySelector("#level-hint"),
+    levelProgress: document.querySelector("#level-progress"),
+    manualButton: document.querySelector("#manual-button"),
+    manualModal: document.querySelector("#manual-modal"),
+    manualBody: document.querySelector("#manual-modal-body"),
+    testsEnterButton: document.querySelector("#tests-enter"),
+    testsModal: document.querySelector("#tests-modal"),
+    testsModalTitle: document.querySelector("#tests-modal-title"),
+    testsModalSummary: document.querySelector("#tests-modal-summary")
   };
 
   let commands = [];
@@ -341,6 +351,14 @@
   }
 
   function makeSelect(node, part, preview) {
+    if (preview) {
+      const chip = document.createElement("span");
+      chip.className = "slot-preview-operator";
+      const current = part.options.find((optionDefinition) => optionDefinition.value === node[part.name]);
+      chip.textContent = current ? current.label : "";
+      return chip;
+    }
+
     const select = document.createElement("select");
     select.className = "block-select";
     select.dataset.nodeId = node.id;
@@ -355,11 +373,6 @@
       option.selected = node[part.name] === optionDefinition.value;
       select.append(option);
     }
-
-    if (preview) {
-      select.disabled = true;
-      select.tabIndex = -1;
-    }
     return select;
   }
 
@@ -367,7 +380,9 @@
     if (preview) {
       const previewName = document.createElement("span");
       previewName.className = "slot slot-name-preview";
-      previewName.append(makeLabel("变量"));
+      const label = makeLabel(node.name || "变量");
+      if (node.name) label.classList.add("has-name");
+      previewName.append(label);
       return previewName;
     }
 
@@ -384,6 +399,18 @@
     return input;
   }
 
+  function formatPreviewAtom(rawValue) {
+    const text = String(rawValue ?? "");
+    if (
+      text.length >= 2 &&
+      ((text.startsWith('"') && text.endsWith('"')) ||
+        (text.startsWith("'") && text.endsWith("'")))
+    ) {
+      return text.slice(1, -1);
+    }
+    return text;
+  }
+
   function makeSlot(node, part, preview) {
     const slot = document.createElement("div");
     slot.className = "slot";
@@ -396,6 +423,21 @@
       slot.classList.add("is-selected");
     }
 
+    const value = node.slots[part.name];
+
+    if (preview && isBlockNode(value)) {
+      slot.append(renderBlock(value, { preview: true }));
+      return slot;
+    }
+
+    if (preview && value && typeof value === "object" && value.kind === "atom" && value.value !== "") {
+      const chip = document.createElement("span");
+      chip.className = "slot-preview-atom";
+      chip.textContent = formatPreviewAtom(value.value);
+      slot.append(chip);
+      return slot;
+    }
+
     if (preview) {
       const placeholder = document.createElement("span");
       placeholder.className = "slot-placeholder";
@@ -404,7 +446,6 @@
       return slot;
     }
 
-    const value = node.slots[part.name];
     if (isBlockNode(value)) {
       slot.append(renderBlock(value));
       return slot;
@@ -555,8 +596,18 @@
       const indexBadge = document.createElement("span");
       indexBadge.className = "command-index";
       indexBadge.textContent = String(index + 1).padStart(2, "0");
-      entry.append(indexBadge, renderBlock(command));
+      const block = renderBlock(command);
+      if (testMode) makeReadOnly(block);
+      entry.append(indexBadge, block);
       elements.commandStack.append(entry);
+
+      if (testMode && command.type === "answer") {
+        const meta = predictionByNodeId.get(command.id);
+        if (meta) {
+          const predRow = makePredictionRow(meta.testIndex, meta.qIdx);
+          elements.commandStack.append(predRow);
+        }
+      }
     });
 
     elements.emptyWorkspace.hidden = commands.length > 0;
@@ -793,6 +844,10 @@
   }
 
   function applyTextProgram() {
+    if (testMode) {
+      showToast("通关检测模式下不可改写工作区");
+      return;
+    }
     const source = elements.textInput.value.trim();
     if (!source) {
       commands = [];
@@ -844,7 +899,9 @@
     }
 
     setStatus("idle", "正在推理");
-    const execution = engine.execute(commands);
+    const level = levelsData.levels.find((entry) => entry.id === currentLevelId);
+    const condition = level ? engine.buildCondition(level.condition) : null;
+    const execution = engine.execute(commands, condition ? { condition } : undefined);
     renderVariables(execution.environment);
     renderResults(execution);
 
@@ -1157,6 +1214,10 @@
   }
 
   function loadExample() {
+    if (testMode) {
+      showToast("通关检测模式下不可改写工作区");
+      return;
+    }
     const chance = createNode("random");
     chance.slots.from = atom("0");
     chance.slots.to = atom("9");
@@ -1266,6 +1327,7 @@
   });
 
   elements.commandStack.addEventListener("click", (event) => {
+    if (event.target.closest(".command-entry--prediction")) return;
     const slot = event.target.closest(".slot[data-parent-id]");
     if (!slot) return;
     activeSlot = { parentId: slot.dataset.parentId, name: slot.dataset.slotName };
@@ -1274,6 +1336,7 @@
   });
 
   elements.commandStack.addEventListener("dblclick", (event) => {
+    if (testMode) return;
     if (event.target.closest("input, select")) return;
     const block = event.target.closest(".logic-block");
     if (!block) return;
@@ -1376,7 +1439,10 @@
   elements.answerTab.addEventListener("click", () => setActiveTab("answer"));
   elements.consoleTab.addEventListener("click", () => setActiveTab("console"));
 
-  elements.runButton.addEventListener("click", runWorkspace);
+  elements.runButton.addEventListener("click", () => {
+    if (testMode) submitAllAndExit();
+    else runWorkspace();
+  });
   elements.exampleButton.addEventListener("click", loadExample);
   elements.emptyExampleButton.addEventListener("click", loadExample);
   elements.textButton.addEventListener("click", openTextModal);
@@ -1409,6 +1475,10 @@
         closeTextModal();
         return;
       }
+      if (elements.manualModal && !elements.manualModal.hidden) {
+        closeManual();
+        return;
+      }
       activeSlot = null;
       document.querySelectorAll(".slot.is-selected").forEach((slot) => slot.classList.remove("is-selected"));
       cleanupDrag();
@@ -1418,8 +1488,530 @@
     }
   });
 
+  // ============== 猜条件 · 解谜闯关 ==============
+
+  const STORAGE_KEYS = {
+    levels: "guess-conditions:levels",
+    manual: "guess-conditions:manual",
+    progress: "guess-conditions:progress",
+    predictions: "guess-conditions:predictions"
+  };
+
+  let levelsData = { levels: [] };
+  let manualText = "";
+  let currentLevelId = null;
+  let levelProgress = {};
+  let testPredictionsByLevel = {};
+
+  async function loadLevelsData() {
+    const stored = localStorage.getItem(STORAGE_KEYS.levels);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed && Array.isArray(parsed.levels) && parsed.levels.length) {
+          levelsData = parsed;
+          return;
+        }
+      } catch {}
+    }
+    if (window.GUESS_DATA && window.GUESS_DATA.levels && window.GUESS_DATA.levels.levels.length) {
+      levelsData = window.GUESS_DATA.levels;
+    }
+    try {
+      const res = await fetch("data/levels.json");
+      if (res.ok) {
+        const fetched = await res.json();
+        if (fetched && Array.isArray(fetched.levels) && fetched.levels.length) {
+          levelsData = fetched;
+        }
+      }
+    } catch (error) {
+      console.warn("载入 data/levels.json 失败，使用内嵌默认数据", error);
+    }
+  }
+
+  async function loadManualText() {
+    const stored = localStorage.getItem(STORAGE_KEYS.manual);
+    if (stored !== null) {
+      manualText = stored;
+      return;
+    }
+    if (typeof window.GUESS_DATA?.manual === "string") {
+      manualText = window.GUESS_DATA.manual;
+    }
+    try {
+      const res = await fetch("data/manual.txt");
+      if (res.ok) manualText = await res.text();
+    } catch (error) {
+      console.warn("载入 data/manual.txt 失败，使用内嵌默认文本", error);
+    }
+  }
+
+  function loadStoredProgress() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.progress);
+      levelProgress = raw ? JSON.parse(raw) : {};
+    } catch {
+      levelProgress = {};
+    }
+  }
+
+  function saveStoredProgress() {
+    localStorage.setItem(STORAGE_KEYS.progress, JSON.stringify(levelProgress));
+  }
+
+  function loadStoredPredictions() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.predictions);
+      testPredictionsByLevel = raw ? JSON.parse(raw) : {};
+    } catch {
+      testPredictionsByLevel = {};
+    }
+  }
+
+  function saveStoredPredictions() {
+    localStorage.setItem(STORAGE_KEYS.predictions, JSON.stringify(testPredictionsByLevel));
+  }
+
+  function currentLevel() {
+    return levelsData.levels.find((entry) => entry.id === currentLevelId) || null;
+  }
+
+  function conditionFor(level) {
+    return level ? engine.buildCondition(level.condition) : null;
+  }
+
+  function countAnswers(commands) {
+    let count = 0;
+    for (const command of commands) countAnswersInside(command, (n) => (count += n));
+    return count;
+  }
+
+  function countAnswersInside(node, visit) {
+    if (!node) return;
+    if (node.type === "answer") visit(1);
+    for (const value of Object.values(node.slots || {})) {
+      if (isBlockNode(value)) countAnswersInside(value, visit);
+    }
+    if (Array.isArray(node.body)) {
+      for (const child of node.body) countAnswersInside(child, visit);
+    }
+  }
+
+  function renderLevelSelector() {
+    const select = elements.levelSelect;
+    select.replaceChildren();
+    levelsData.levels.forEach((level, index) => {
+      const option = document.createElement("option");
+      option.value = level.id;
+      const passed = levelProgress[level.id];
+      option.textContent = `${index + 1}. ${level.title}${passed ? "  ✓" : ""}`;
+      if (level.id === currentLevelId) option.selected = true;
+      select.append(option);
+    });
+  }
+
+  function updateLevelProgressBadge() {
+    if (!currentLevelId) {
+      elements.levelProgress.hidden = true;
+      return;
+    }
+    const passed = levelProgress[currentLevelId];
+    elements.levelProgress.hidden = false;
+    elements.levelProgress.textContent = passed ? "已通关" : "未通关";
+    elements.levelProgress.dataset.state = passed ? "passed" : "locked";
+  }
+
+  function selectLevel(id) {
+    const level = levelsData.levels.find((entry) => entry.id === id);
+    if (!level) return;
+    currentLevelId = id;
+    elements.levelHint.textContent = level.hint || "";
+
+    const demoSource = (level.demoProgram || []).join("\n");
+    try {
+      commands = demoSource.trim() ? engine.parse(demoSource) : [];
+    } catch (error) {
+      commands = [];
+      showToast(`示例程序解析失败：${error.message}`);
+    }
+    activeSlot = null;
+    if (testMode) exitTestMode();
+    renderWorkspace();
+    clearExecution();
+    renderLevelSelector();
+    updateLevelProgressBadge();
+  }
+
+  function makeChoiceGroup(current, onSelect) {
+    const group = document.createElement("div");
+    group.className = "choice-group";
+    ["T", "F", "U", "I"].forEach((code) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "choice-btn";
+      btn.dataset.code = code;
+      btn.innerHTML = `<b>${code}</b> ${engine.LOGIC_LABELS[code]}`;
+      if (current === code) btn.classList.add("is-selected");
+      btn.addEventListener("click", () => {
+        group.querySelectorAll(".choice-btn").forEach((other) => other.classList.remove("is-selected"));
+        btn.classList.add("is-selected");
+        onSelect(code);
+      });
+      group.append(btn);
+    });
+    return group;
+  }
+
+  function makeReadOnly(root) {
+    const blocks = root.classList && root.classList.contains("logic-block")
+      ? [root, ...root.querySelectorAll(".logic-block")]
+      : Array.from(root.querySelectorAll(".logic-block"));
+    blocks.forEach((el) => {
+      el.draggable = false;
+      el.tabIndex = -1;
+    });
+    root.querySelectorAll("input").forEach((el) => {
+      el.readOnly = true;
+    });
+    root.querySelectorAll("select").forEach((el) => {
+      el.disabled = true;
+    });
+  }
+
+  // ===== Test mode: predictions injected into workspace =====
+  let testMode = false;
+  let commandsBeforeTest = null;
+  const predictionByNodeId = new Map(); // nodeId -> { testId, qIdx }
+
+  function makePredictionRow(testIndex, qIdx) {
+    const meta = [...predictionByNodeId.entries()].find(([, info]) => info.testIndex === testIndex && info.qIdx === qIdx);
+    const testId = meta?.[1]?.testId;
+    const stored = (testPredictionsByLevel[currentLevelId] &&
+      testPredictionsByLevel[currentLevelId][testId]) || [];
+    const row = document.createElement("div");
+    row.className = "command-entry command-entry--prediction";
+    row.dataset.role = "prediction";
+    row.dataset.testId = testId || "";
+    row.dataset.testIndex = String(testIndex);
+    row.dataset.qIdx = String(qIdx);
+
+    const label = document.createElement("span");
+    label.className = "test-prediction-label";
+    label.textContent = `第 ${testIndex + 1} 题·第 ${qIdx + 1} 问`;
+    row.append(label);
+
+    const group = makeChoiceGroup(stored[qIdx] || null, (code) => {
+      const levelBucket = testPredictionsByLevel[currentLevelId] || {};
+      const bucket = levelBucket[testId] ? levelBucket[testId].slice() : [];
+      bucket[qIdx] = code;
+      levelBucket[testId] = bucket;
+      testPredictionsByLevel[currentLevelId] = levelBucket;
+      saveStoredPredictions();
+    });
+    row.append(group);
+
+    return row;
+  }
+
+  function enterTestMode() {
+    const level = currentLevel();
+    if (!level || !level.tests || !level.tests.length) {
+      showToast("当前关卡暂无预测题");
+      return;
+    }
+    if (testMode) return;
+
+    commandsBeforeTest = commands.slice();
+    commands = [];
+    testPredictionsByLevel[currentLevelId] = testPredictionsByLevel[currentLevelId] || {};
+    predictionByNodeId.clear();
+
+    level.tests.forEach((test, testIndex) => {
+      let parsed;
+      try {
+        parsed = engine.parse(test.program || "");
+      } catch (error) {
+        showToast(`预测题解析失败：${error.message}`);
+        return;
+      }
+      let qIdx = 0;
+      parsed.forEach((cmd) => {
+        commands.push(cmd);
+        if (cmd.type === "answer") {
+          predictionByNodeId.set(cmd.id, { testId: test.id, testIndex, qIdx });
+          qIdx += 1;
+        }
+      });
+    });
+
+    testMode = true;
+    renderWorkspace();
+    setWorkspaceMutatorsEnabled(false);
+    if (elements.testsEnterButton) {
+      elements.testsEnterButton.textContent = "退出通关检测";
+      elements.testsEnterButton.classList.add("is-active");
+    }
+    setStatus("idle", "等待作答");
+  }
+
+  function exitTestMode() {
+    if (!testMode) return;
+    testMode = false;
+    predictionByNodeId.clear();
+    commands = commandsBeforeTest || [];
+    commandsBeforeTest = null;
+    renderWorkspace();
+    setWorkspaceMutatorsEnabled(true);
+    if (elements.testsEnterButton) {
+      elements.testsEnterButton.textContent = "进入通关检测";
+      elements.testsEnterButton.classList.remove("is-active");
+    }
+    clearExecution();
+  }
+
+  function setWorkspaceMutatorsEnabled(enabled) {
+    const buttons = [
+      elements.exampleButton,
+      elements.emptyExampleButton,
+      elements.textButton,
+      elements.clearButton
+    ].filter(Boolean);
+    buttons.forEach((btn) => {
+      btn.disabled = !enabled;
+      btn.classList.toggle("is-disabled", !enabled);
+      btn.setAttribute("aria-disabled", String(!enabled));
+    });
+    if (elements.emptyWorkspace) {
+      elements.emptyWorkspace.classList.toggle("is-disabled", !enabled);
+    }
+    if (elements.runButton) {
+      elements.runButton.dataset.mode = enabled ? "run" : "submit";
+      elements.runButton.innerHTML = enabled
+        ? '<span class="play-icon" aria-hidden="true"></span> 运行逻辑'
+        : '<span class="play-icon" aria-hidden="true"></span> 提交预测';
+    }
+  }
+
+  // Manual modal
+  function parseManual(text) {
+    const lines = text.split(/\r?\n/);
+    const blocks = [];
+    let buffer = [];
+    function flushParagraph() {
+      if (!buffer.length) return;
+      blocks.push({ type: "p", lines: buffer });
+      buffer = [];
+    }
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        flushParagraph();
+        continue;
+      }
+      if (trimmed.startsWith("# ")) {
+        flushParagraph();
+        blocks.push({ type: "h1", text: trimmed.slice(2) });
+        continue;
+      }
+      if (trimmed.startsWith("## ")) {
+        flushParagraph();
+        blocks.push({ type: "h2", text: trimmed.slice(3) });
+        continue;
+      }
+      buffer.push(line);
+    }
+    flushParagraph();
+    return blocks;
+  }
+
+  function renderInline(container, text) {
+    const regex = /\[(block:[a-zA-Z]+|value:[^\]]+)\]/g;
+    let cursor = 0;
+    let match;
+    const frag = document.createDocumentFragment();
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > cursor) {
+        frag.append(document.createTextNode(text.slice(cursor, match.index)));
+      }
+      const token = match[1];
+      if (token.startsWith("block:")) {
+        const type = token.slice(6);
+        try {
+          const node = createNode(type);
+          const block = renderBlock(node, { preview: true });
+          block.classList.add("manual-block");
+          frag.append(block);
+        } catch {
+          frag.append(document.createTextNode(match[0]));
+        }
+      } else if (token.startsWith("value:")) {
+        const span = document.createElement("span");
+        span.className = "manual-value";
+        span.textContent = token.slice(6);
+        frag.append(span);
+      }
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < text.length) frag.append(document.createTextNode(text.slice(cursor)));
+    container.append(frag);
+  }
+
+  function renderManualContent(container, text) {
+    container.replaceChildren();
+    const blocks = parseManual(text || "");
+    for (const block of blocks) {
+      if (block.type === "h1") {
+        const h = document.createElement("h1");
+        h.textContent = block.text;
+        container.append(h);
+      } else if (block.type === "h2") {
+        const h = document.createElement("h2");
+        h.textContent = block.text;
+        container.append(h);
+      } else {
+        const p = document.createElement("p");
+        renderInline(p, block.lines.join("\n"));
+        container.append(p);
+      }
+    }
+  }
+
+  function openManual() {
+    renderManualContent(elements.manualBody, manualText);
+    elements.manualModal.hidden = false;
+  }
+
+  function closeManual() {
+    elements.manualModal.hidden = true;
+  }
+
+  function evaluateAllTests() {
+    const level = currentLevel();
+    if (!level) return null;
+    const conditionFn = engine.buildCondition(level.condition);
+    const rows = [];
+    let allCorrect = true;
+    let missingAny = false;
+
+    level.tests.forEach((test, testIndex) => {
+      let commands;
+      try {
+        commands = engine.parse(test.program);
+      } catch (error) {
+        rows.push({ testIndex, test, predictions: [], actuals: [], error: error.message });
+        allCorrect = false;
+        missingAny = true;
+        return;
+      }
+      const execution = engine.execute(commands, conditionFn ? { condition: conditionFn } : undefined);
+      const actuals = execution.outputs.map((output) => output.result.code);
+      const predictions = (testPredictionsByLevel[level.id] &&
+        testPredictionsByLevel[level.id][test.id]) || [];
+      const expected = (expectedOutputs(test) || []).slice();
+      const matchesExpected = expected.length === actuals.length &&
+        expected.every((code, i) => code === actuals[i]);
+      const correctPredictions = predictions.length === actuals.length &&
+        predictions.length > 0 &&
+        predictions.every((code, i) => code === actuals[i]);
+      const filled = predictions.length === actuals.length && predictions.every((code) => code);
+      if (!filled || !correctPredictions) {
+        allCorrect = false;
+        if (!filled) missingAny = true;
+      }
+      rows.push({
+        testIndex,
+        test,
+        predictions: predictions.slice(),
+        actuals,
+        expected,
+        matchesExpected,
+        correctPredictions,
+        filled,
+        error: null
+      });
+    });
+
+    return { level, rows, allCorrect, missingAny };
+  }
+
+  function expectedOutputs(test) {
+    if (Array.isArray(test.expectedOutputs)) return test.expectedOutputs;
+    if (Array.isArray(test.outputs)) return test.outputs;
+    return [];
+  }
+
+  function showTestsModal(evaluation) {
+    const { level, allCorrect, missingAny } = evaluation;
+    const { rows } = evaluation;
+    const total = rows.length;
+
+    elements.testsModalTitle.textContent = allCorrect
+      ? `恭喜通关「${level.title}」`
+      : "未完全通过，再检查一下";
+    elements.testsModalSummary.dataset.state = allCorrect ? "passed" : "failed";
+    if (allCorrect) {
+      elements.testsModalSummary.textContent = `本轮 ${total} / ${total} 题全部命中，可继续挑战下一关。`;
+    } else if (missingAny) {
+      elements.testsModalSummary.textContent = `还有未作答的题目，请回到工作区补全预测。`;
+    } else {
+      elements.testsModalSummary.textContent = `本轮预测未全部命中，请回到工作区继续作答。`;
+    }
+
+    if (allCorrect) {
+      if (!levelProgress[level.id]) {
+        levelProgress[level.id] = true;
+        saveStoredProgress();
+      }
+      renderLevelSelector();
+      updateLevelProgressBadge();
+    }
+
+    elements.testsModal.hidden = false;
+  }
+
+  function hideTestsModal() {
+    elements.testsModal.hidden = true;
+  }
+
+  function submitAllAndExit() {
+    const evaluation = evaluateAllTests();
+    if (!evaluation) return;
+    showTestsModal(evaluation);
+    if (evaluation.allCorrect) {
+      showToast(`恭喜通关「${evaluation.level.title}」！`);
+    }
+  }
+
+  elements.manualButton?.addEventListener("click", openManual);
+  elements.manualModal?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-close]")) closeManual();
+  });
+  elements.testsEnterButton?.addEventListener("click", () => {
+    if (testMode) exitTestMode();
+    else enterTestMode();
+  });
+  elements.testsModal?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-close]")) hideTestsModal();
+  });
+  elements.levelSelect?.addEventListener("change", (event) => {
+    selectLevel(event.target.value);
+  });
+
+  async function bootstrapGame() {
+    loadStoredProgress();
+    loadStoredPredictions();
+    await Promise.all([loadLevelsData(), loadManualText()]);
+    if (levelsData.levels.length) {
+      selectLevel(levelsData.levels[0].id);
+    } else {
+      renderLevelSelector();
+    }
+  }
+
   renderLibrary();
   renderWorkspace();
   emptyVariables();
   emptyResults();
+  bootstrapGame();
 })();

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="可拖拽、可执行的 Scratch 风格四值逻辑处理器">
-  <title>逻辑工坊 · T/F/U/I 推理器</title>
+  <meta name="description" content="基于四值逻辑的解谜闯关游戏：推断每关隐藏的条件">
+  <title>猜条件 · 解谜闯关</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -15,18 +15,30 @@
           <i></i><i></i><i></i>
         </span>
         <div>
-          <p class="eyebrow">LOGIC WORKSHOP</p>
-          <h1>逻辑工坊</h1>
+          <p class="eyebrow">Pattern Guessing</p>
+          <h1>猜条件</h1>
         </div>
       </div>
 
+      <div class="level-selector" aria-label="关卡选择">
+        <label class="level-label" for="level-select">关卡</label>
+        <div class="level-select-wrap">
+          <select id="level-select" class="level-select" aria-label="选择关卡"></select>
+          <span class="level-progress" id="level-progress" data-state="locked" hidden>未通关</span>
+        </div>
+        <p class="level-hint" id="level-hint"></p>
+      </div>
+
       <div class="topbar-actions" aria-label="工作区操作">
+        <button class="icon-button help-button" id="manual-button" type="button" aria-label="查看说明">?</button>
+        <a class="button button-ghost" id="editor-link" href="level-editor.html">关卡编辑器</a>
         <span class="run-status" id="run-status" data-state="idle">
           <span class="status-dot"></span>
           <span>等待运行</span>
         </span>
         <button class="button button-ghost" id="example-button" type="button">载入示例</button>
         <button class="button button-ghost" id="text-button" type="button">文字表示</button>
+        <button class="button button-ghost" id="tests-enter" type="button">进入通关检测</button>
         <button class="button button-ghost danger" id="clear-button" type="button">清空</button>
         <button class="button button-run" id="run-button" type="button">
           <span class="play-icon" aria-hidden="true"></span>
@@ -48,40 +60,43 @@
         <div id="block-library" class="block-library"></div>
       </aside>
 
-      <section class="panel workspace-panel" aria-labelledby="workspace-heading">
-        <div class="panel-heading workspace-heading">
-          <div>
-            <p class="section-kicker">WORKSPACE</p>
-            <h2 id="workspace-heading">逻辑工作区</h2>
-          </div>
-          <div class="workspace-meta">
-            <span id="command-count">0 条指令</span>
-            <span class="keyboard-hint">双击积木可删除</span>
-          </div>
-        </div>
-
-        <div class="workspace-scroll">
-          <div id="workspace" class="workspace" data-accept="command" tabindex="0" aria-label="指令投放区">
-            <div class="workspace-grid" aria-hidden="true"></div>
-            <div class="empty-workspace" id="empty-workspace">
-              <div class="empty-illustration" aria-hidden="true">
-                <span class="ghost-block ghost-command"></span>
-                <span class="ghost-block ghost-predicate"></span>
-                <span class="ghost-block ghost-value"></span>
-              </div>
-              <h3>把第一块逻辑积木放在这里</h3>
-              <p>从左侧拖入“赋值”或“回答”指令，开始搭建推理流程。</p>
-              <button class="inline-action" id="empty-example-button" type="button">载入一个完整示例</button>
+      <div class="workspace-column">
+        <section class="panel workspace-panel" aria-labelledby="workspace-heading">
+          <div class="panel-heading workspace-heading">
+            <div>
+              <p class="section-kicker">WORKSPACE</p>
+              <h2 id="workspace-heading">逻辑工作区</h2>
             </div>
-            <div id="command-stack" class="command-stack" aria-live="polite"></div>
+            <div class="workspace-meta">
+              <span id="command-count">0 条指令</span>
+              <span class="keyboard-hint">双击积木可删除</span>
+            </div>
           </div>
-        </div>
 
-        <div class="trash-zone" id="trash-zone" aria-label="积木删除区">
-          <span class="trash-icon" aria-hidden="true"></span>
-          <span>拖到这里删除</span>
+          <div class="workspace-scroll">
+            <div id="workspace" class="workspace" data-accept="command" tabindex="0" aria-label="指令投放区">
+              <div class="workspace-grid" aria-hidden="true"></div>
+              <div class="empty-workspace" id="empty-workspace">
+                <div class="empty-illustration" aria-hidden="true">
+                  <span class="ghost-block ghost-command"></span>
+                  <span class="ghost-block ghost-predicate"></span>
+                  <span class="ghost-block ghost-value"></span>
+                </div>
+                <h3>把第一块逻辑积木放在这里</h3>
+                <p>从左侧拖入“赋值”或“回答”指令，开始搭建推理流程。</p>
+                <button class="inline-action" id="empty-example-button" type="button">载入一个完整示例</button>
+              </div>
+              <div id="command-stack" class="command-stack" aria-live="polite"></div>
+            </div>
+          </div>
+
+          <div class="trash-zone" id="trash-zone" aria-label="积木删除区">
+            <span class="trash-icon" aria-hidden="true"></span>
+            <span>拖到这里删除</span>
+          </div>
+        </section>
+
         </div>
-      </section>
 
       <aside class="inspector-column">
         <section class="panel variables-panel" aria-labelledby="variables-heading">
@@ -144,6 +159,20 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <div class="manual-modal" id="manual-modal" hidden role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
+    <div class="manual-modal-backdrop" data-close></div>
+    <div class="manual-modal-content">
+      <header class="manual-modal-head">
+        <div>
+          <p class="section-kicker">MANUAL</p>
+          <h2 id="manual-modal-title">积木手册</h2>
+        </div>
+        <button class="icon-button" data-close type="button" aria-label="关闭">×</button>
+      </header>
+      <div class="manual-modal-body" id="manual-modal-body"></div>
+    </div>
+  </div>
+
   <div class="text-modal" id="text-modal" hidden role="dialog" aria-modal="true" aria-labelledby="text-modal-title">
     <div class="text-modal-backdrop" data-close></div>
     <div class="text-modal-content">
@@ -169,7 +198,26 @@
     </div>
   </div>
 
+  <div class="tests-modal" id="tests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tests-modal-title">
+    <div class="tests-modal-backdrop" data-close></div>
+    <div class="tests-modal-content">
+      <header class="tests-modal-head">
+        <div>
+          <p class="section-kicker">CHECKPOINT</p>
+          <h2 id="tests-modal-title">通关检测结果</h2>
+        </div>
+        <button class="icon-button" data-close type="button" aria-label="关闭">×</button>
+      </header>
+      <p class="tests-modal-summary" id="tests-modal-summary"></p>
+      <footer class="tests-modal-foot">
+        <span class="text-modal-spacer"></span>
+        <button class="button button-run" data-close type="button">知道了</button>
+      </footer>
+    </div>
+  </div>
+
   <script src="logic-engine.js"></script>
+  <script src="data-bundle.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

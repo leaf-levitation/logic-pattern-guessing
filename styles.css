@@ -1250,6 +1250,46 @@ body.is-dragging .trash-zone {
   white-space: nowrap;
 }
 
+.slot-preview-atom {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  border-radius: 6px;
+  background: rgba(72, 105, 246, 0.06);
+  white-space: nowrap;
+}
+
+.slot-preview-operator {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink);
+  border-radius: 6px;
+  background: rgba(231, 121, 36, 0.1);
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.slot-name-preview {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.slot-name-preview .block-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.slot-name-preview .block-label.has-name {
+  color: #fff;
+  background: rgba(20, 25, 50, 0.18);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 .logic-block.is-drag-source {
   opacity: 0.25;
 }
@@ -1555,4 +1595,376 @@ body.is-dragging .trash-zone {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/* ===== 猜条件 · 解谜闯关 ===== */
+
+.workspace-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.workspace-column .workspace-panel {
+  flex: 1 1 50%;
+  min-height: 280px;
+}
+
+.tests-modal[hidden] {
+  display: none;
+}
+
+.is-active {
+  background: var(--predicate);
+  color: #fff;
+  border-color: var(--predicate);
+}
+
+.level-selector {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 auto;
+  padding: 4px 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.level-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.level-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.level-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 9px 36px 9px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%, var(--muted) 56%, transparent 56%),
+    linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 56%, transparent 56%);
+  background-position: calc(100% - 18px) 16px, calc(100% - 12px) 16px;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  min-width: 220px;
+}
+
+.level-select:focus-visible {
+  outline: 3px solid rgba(72, 105, 246, 0.28);
+  outline-offset: 2px;
+}
+
+.level-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.level-progress[data-state="passed"] {
+  background: rgba(18, 169, 151, 0.14);
+  color: #087e73;
+}
+
+.level-progress[data-state="locked"] {
+  background: rgba(232, 92, 105, 0.14);
+  color: #c63e4b;
+}
+
+.level-hint {
+  flex-basis: 100%;
+  margin: 6px 0 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.help-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--predicate);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  margin-right: 4px;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.help-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(112, 87, 223, 0.18);
+}
+
+/* Prediction rows inside the workspace (test mode) */
+.command-entry--prediction {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 14px 10px 56px;
+  background: rgba(112, 87, 223, 0.04);
+  border: 1px dashed rgba(112, 87, 223, 0.28);
+  border-radius: 10px;
+  margin: 4px 0 8px;
+}
+
+.test-prediction-label {
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.choice-group {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid var(--soft-line);
+}
+
+.choice-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.choice-btn b {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.choice-btn:hover {
+  background: rgba(72, 105, 246, 0.08);
+  color: var(--ink);
+}
+
+.choice-btn.is-selected {
+  background: var(--predicate);
+  color: #fff;
+}
+
+.choice-btn.is-selected b {
+  color: #fff;
+}
+
+/* Disabled buttons (workspace mutators in test mode) */
+.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Result modal (only overall pass/fail) */
+.tests-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.tests-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.tests-modal-content {
+  position: relative;
+  width: min(520px, 100%);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+
+.tests-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 26px 14px;
+  border-bottom: 1px solid var(--soft-line);
+}
+
+.tests-modal-content h2 {
+  font-size: 19px;
+  margin-top: 4px;
+}
+
+.tests-modal-summary {
+  margin: 18px 26px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.tests-modal-summary[data-state="passed"] {
+  color: #087e73;
+}
+
+.tests-modal-summary[data-state="failed"] {
+  color: #c63e4b;
+}
+
+.tests-modal-foot {
+  display: flex;
+  align-items: center;
+  padding: 16px 26px 22px;
+  border-top: 1px solid var(--soft-line);
+}
+
+.text-modal-spacer {
+  flex: 1;
+}
+
+/* Manual modal */
+.manual-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.manual-modal[hidden] {
+  display: none;
+}
+
+.manual-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.manual-modal-content {
+  position: relative;
+  width: min(880px, 100%);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+
+.manual-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--soft-line);
+}
+
+.manual-modal-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.manual-modal-body {
+  padding: 22px 26px 28px;
+  overflow: auto;
+  line-height: 1.75;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.manual-modal-body h1 {
+  margin: 4px 0 14px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.manual-modal-body h2 {
+  margin: 22px 0 10px;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+.manual-modal-body p {
+  margin: 8px 0;
+}
+
+.manual-modal-body code {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(112, 87, 223, 0.1);
+  color: var(--predicate-dark);
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.manual-modal-body .manual-block {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 4px;
+}
+
+.manual-modal-body .manual-value {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(18, 169, 151, 0.13);
+  color: var(--value-dark);
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  font-size: 12px;
+  margin: 0 2px;
+}
+
+.manual-modal-body .manual-rule {
+  border: 1px solid var(--soft-line);
+  background: #fbfcfe;
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin: 6px 0;
+}
+
+.manual-modal-body strong {
+  color: var(--ink);
+  font-weight: 800;
 }

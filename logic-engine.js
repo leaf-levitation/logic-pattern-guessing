@@ -273,11 +273,61 @@
 
   function evaluatePredicate(node, environment = new Map(), context = null) {
     if (!node) return logicError("六边形孔位中缺少判断积木");
-    if (node.type === "compare") return compare(node, environment, context);
-    if (node.type === "contains") return contains(node, environment, context);
-    if (node.type === "not") return negate(evaluatePredicate(node.slots?.predicate, environment, context));
-    if (node.type === "isQuestion") return isQuestion(node, environment, context);
-    return logicError("该积木不能作为判断条件");
+    let result;
+    if (node.type === "compare") result = compare(node, environment, context);
+    else if (node.type === "contains") result = contains(node, environment, context);
+    else if (node.type === "not") result = negate(evaluatePredicate(node.slots?.predicate, environment, context));
+    else if (node.type === "isQuestion") result = isQuestion(node, environment, context);
+    else return logicError("该积木不能作为判断条件");
+
+    if (context && typeof context.condition === "function") {
+      try {
+        result = context.condition(result, node, context);
+      } catch (err) {
+        return logicError(err?.message || "关卡条件变换失败");
+      }
+    }
+    return result;
+  }
+
+  function negateTandF(result) {
+    if (!result || typeof result.code !== "string") return result;
+    if (result.code === "T") return { ...result, code: "F", label: LOGIC_LABELS.F };
+    if (result.code === "F") return { ...result, code: "T", label: LOGIC_LABELS.T };
+    return result;
+  }
+
+  function buildCondition(spec) {
+    if (!spec || spec === "truth") return null;
+    if (spec === "alwaysLie") {
+      return (result) => negateTandF(result);
+    }
+    if (spec === "lieIfLong") {
+      return (result, node, context) => {
+        if (!node) return result;
+        const text = charCountText(node, context || {});
+        if (countChars(text) >= 10) return negateTandF(result);
+        return result;
+      };
+    }
+    if (spec === "lieIfOddLine") {
+      return (result, node, context) => {
+        const line = Number(context && context.line);
+        if (Number.isFinite(line) && Math.abs(line) % 2 === 1) return negateTandF(result);
+        return result;
+      };
+    }
+    if (spec === "isAnswerIs") {
+      return (result, node, context) => {
+        if (!node) return result;
+        const text = charCountText(node, context || {});
+        if (text.includes("是")) {
+          return { ...result, code: "T", label: LOGIC_LABELS.T };
+        }
+        return result;
+      };
+    }
+    return null;
   }
 
   function isQuestion(node, environment, context) {
@@ -453,7 +503,7 @@
     return valueError("该积木不能作为变量值");
   }
 
-  function execute(commands) {
+  function execute(commands, options = {}) {
     const environment = new Map();
     const outputs = [];
     const steps = [];
@@ -461,6 +511,7 @@
     const answerHistory = [];
     const questionPredicates = [];
     const MAX_LOOP_ITERATIONS = 64;
+    const conditionFn = typeof options.condition === "function" ? options.condition : null;
     let questionCount = 0;
 
     function snapshotEnvironment() {
@@ -504,7 +555,8 @@
             question: questionCount,
             answers: answerHistory,
             questionPredicates,
-            answeredCount: questionCount - 1
+            answeredCount: questionCount - 1,
+            condition: conditionFn
           };
           const result = evaluateAnswerPredicate(subCommand.slots?.predicate, environment, context);
           answerHistory[questionCount - 1] = result;
@@ -1104,6 +1156,8 @@
     execute,
     integerPoints,
     negate,
+    negateTandF,
+    buildCondition,
     summarizeValue,
     variableNameIsValid,
     parse,

@@ -603,3 +603,83 @@ test("字数：<第x问> 在 x=已答数+1 时字面计入，不递归", () => {
   const execution = engine.execute(program);
   assert.equal(execution.outputs[2].result.code, "T");
 });
+
+test("buildCondition：truth 返回 null，其他都返回函数", () => {
+  assert.equal(engine.buildCondition("truth"), null);
+  assert.equal(engine.buildCondition(null), null);
+  assert.equal(typeof engine.buildCondition("alwaysLie"), "function");
+  assert.equal(typeof engine.buildCondition("lieIfLong"), "function");
+  assert.equal(typeof engine.buildCondition("lieIfOddLine"), "function");
+  assert.equal(typeof engine.buildCondition("isAnswerIs"), "function");
+});
+
+test("关卡条件：alwaysLie 把每个判断的 T/F 反转，U/I 不变", () => {
+  const condition = engine.buildCondition("alwaysLie");
+  const program = [
+    "[回答 <比较 (3) 大于 (2) 吗?>]",          // 3>2 = T -> F
+    "[回答 <比较 (1) 大于 (5) 吗?>]",          // 1>5 = F -> T
+    "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]"  // U -> U
+  ];
+  const execution = engine.execute(engine.parse(program.join("\n")), { condition });
+  assert.deepEqual(execution.outputs.map((o) => o.result.code), ["F", "T", "U"]);
+});
+
+test("关卡条件：alwaysLie 会作用于 not 内部的判断", () => {
+  // 内层 3>2 = T -> lie -> F；外层 not(F) = T -> lie -> F
+  const condition = engine.buildCondition("alwaysLie");
+  const program = ["[回答 <不成立 <比较 (3) 大于 (2) 吗?> 吗?>]"];
+  const execution = engine.execute(engine.parse(program.join("\n")), { condition });
+  assert.equal(execution.outputs[0].result.code, "F");
+});
+
+test("关卡条件：lieIfLong 按问题字数反转，长问题才说谎", () => {
+  const condition = engine.buildCondition("lieIfLong");
+  // “3大于2吗?” 5 字 -> T； “3大于5吗?” 5 字 -> F；
+  // “3大于2吗?不成立吗?” 11 字 -> not(T)=F -> lie -> T；
+  // “3大于5吗?不成立吗?” 11 字 -> not(F)=T -> lie -> F
+  const program = [
+    "[回答 <比较 (3) 大于 (2) 吗?>]",
+    "[回答 <比较 (3) 大于 (5) 吗?>]",
+    "[回答 <不成立 <比较 (3) 大于 (2) 吗?> 吗?>]",
+    "[回答 <不成立 <比较 (3) 大于 (5) 吗?> 吗?>]"
+  ];
+  const execution = engine.execute(engine.parse(program.join("\n")), { condition });
+  assert.deepEqual(execution.outputs.map((o) => o.result.code), ["T", "F", "T", "F"]);
+});
+
+test("关卡条件：lieIfOddLine 仅在奇数行反转判断", () => {
+  const condition = engine.buildCondition("lieIfOddLine");
+  // 行 1(奇): T->F；行 2(偶): T 不变；行 3(奇): T->F
+  const program = [
+    "[回答 <比较 (3) 大于 (2) 吗?>]",
+    "[回答 <比较 (3) 大于 (2) 吗?>]",
+    "[回答 <比较 (3) 大于 (2) 吗?>]"
+  ];
+  const execution = engine.execute(engine.parse(program.join("\n")), { condition });
+  assert.deepEqual(execution.outputs.map((o) => o.result.code), ["F", "T", "F"]);
+});
+
+test("关卡条件：isAnswerIs 强制含“是”字的判断回答“是”", () => {
+  const condition = engine.buildCondition("isAnswerIs");
+  // “3大于2吗?” 没有 “是” -> 正常 T；
+  // “1大于5吗?” 没有 “是” -> 正常 F；
+  // “是等于否吗?” 含 “是” -> 强制 T（基底是 F）；
+  // “是等于是吗?” 含 “是” -> 强制 T（基底也是 T）
+  const program = [
+    "[回答 <比较 (3) 大于 (2) 吗?>]",
+    "[回答 <比较 (1) 大于 (5) 吗?>]",
+    "[回答 <比较 (\"是\") 等于 (\"否\") 吗?>]",
+    "[回答 <比较 (\"是\") 等于 (\"是\") 吗?>]"
+  ];
+  const execution = engine.execute(engine.parse(program.join("\n")), { condition });
+  assert.deepEqual(execution.outputs.map((o) => o.result.code), ["T", "F", "T", "T"]);
+});
+
+test("execute 不带 condition 时保持原行为", () => {
+  const program = [
+    "[回答 <比较 (3) 大于 (2) 吗?>]",
+    "[回答 <比较 (1) 大于 (5) 吗?>]"
+  ];
+  const execution = engine.execute(engine.parse(program.join("\n")));
+  assert.deepEqual(execution.outputs.map((o) => o.result.code), ["T", "F"]);
+});

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="猜条件 · 关卡编辑器">
+  <title>关卡编辑器 · 猜条件</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="level-editor.css">
+</head>
+<body>
+  <div class="app-shell editor-shell">
+    <header class="topbar editor-topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <div>
+          <p class="eyebrow">LEVEL EDITOR</p>
+          <h1>关卡编辑器</h1>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <span class="editor-status" id="editor-status" data-state="saved">已同步到本地</span>
+        <button class="button button-ghost" id="back-button" type="button">返回游戏</button>
+        <button class="button button-ghost" id="export-button" type="button">导出 JSON</button>
+        <button class="button button-ghost" id="import-button" type="button">导入 JSON</button>
+        <button class="button button-ghost danger" id="reset-button" type="button">恢复默认</button>
+      </div>
+    </header>
+
+    <nav class="editor-tabs" aria-label="编辑区切换">
+      <button class="editor-tab is-active" data-tab="levels" type="button">关卡数据</button>
+      <button class="editor-tab" data-tab="manual" type="button">手册文本</button>
+    </nav>
+
+    <main class="editor-main">
+      <section class="editor-pane" data-pane="levels">
+        <aside class="editor-list">
+          <header class="editor-list-head">
+            <h2>关卡列表</h2>
+            <button class="button button-ghost" id="add-level-button" type="button">+ 新增</button>
+          </header>
+          <div class="level-list" id="level-list"></div>
+        </aside>
+
+        <section class="editor-detail" id="level-detail" aria-live="polite">
+          <div class="editor-empty">请选择左侧的关卡进行编辑。</div>
+        </section>
+      </section>
+
+      <section class="editor-pane" data-pane="manual" hidden>
+        <div class="manual-editor">
+          <header class="manual-editor-head">
+            <h2>手册文本（手册内容）</h2>
+            <p>使用 Markdown 风格的标题（<code>#</code> 一级，<code>##</code> 二级）和占位符 <code>[block:answer]</code>、<code>[value:$名称]</code> 等。</p>
+          </header>
+          <textarea id="manual-textarea" class="manual-textarea" spellcheck="false" aria-label="手册编辑区"></textarea>
+          <div class="manual-editor-actions">
+            <span class="manual-editor-hint">修改即时保存。点击右上角“导出 JSON”可生成可分发的备份。</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <input type="file" id="import-file" hidden accept=".json,application/json">
+
+  <script src="logic-engine.js"></script>
+  <script src="data-bundle.js"></script>
+  <script src="level-editor.js"></script>
+</body>
+</html>
