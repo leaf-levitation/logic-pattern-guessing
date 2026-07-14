@@ -281,21 +281,158 @@
   }
 
   function isQuestion(node, environment, context) {
-    if (!context) return logicError("第几问 只能在回答指令中使用");
+    if (!context || context.question == null || Number.isNaN(Number(context.question))) {
+      return logicError("第几问 只能在回答指令中使用");
+    }
     const value = evaluateInput(node.slots?.value, environment, context);
     if (!value.ok) return logicError(value.error);
     if (!isNumeric(value)) return logicError("第几问 的参数需要整数");
-    const target = domain("int", [Number(value.values[0])], "isQuestion");
-    const current = domain("int", [Number(context.question)], "context");
-    return relationResult(target, current, (a, b) => a === b, "问题编号比较");
+    const raw = Number(value.values[0]);
+    if (!Number.isInteger(raw)) {
+      return logicError(`第几问 的参数必须是整数，收到 ${raw}`);
+    }
+    const x = raw;
+    const y = Number(context.question);
+    if (x === y) {
+      const hypothesis = context.hypothesis;
+      if (hypothesis) {
+        return logic(hypothesis, `假设本题回答为 ${LOGIC_LABELS[hypothesis]}`, null);
+      }
+      return logic("U", `第 ${x} 问 自我引用`, null);
+    }
+    if (x > y || x <= 0) {
+      return logicError(`第 ${x} 问 不存在或尚未到来`);
+    }
+    const prior = context.answers && context.answers[x - 1];
+    if (!prior) return logicError(`第 ${x} 问 尚未回答`);
+    return logic(prior.code, `第 ${x} 问 的回答是 ${prior.label}`, prior.stats);
+  }
+
+  function combineAnswerHypotheses(kept) {
+    if (!kept.length) {
+      return logicError("所有假设均与本题回答矛盾");
+    }
+    const codes = new Set(kept.map((entry) => entry.code));
+    if (codes.has("T") && codes.has("F")) {
+      return logic("U", "假设 T 与 F 均不矛盾 → 不确定", null);
+    }
+    if (codes.has("T")) return kept.find((entry) => entry.code === "T");
+    if (codes.has("F")) return kept.find((entry) => entry.code === "F");
+    if (codes.has("U")) return kept.find((entry) => entry.code === "U");
+    return kept[0];
+  }
+
+  function evaluateAnswerPredicate(predicate, environment, context) {
+    const kept = [];
+    for (const hypothesis of ["T", "F", "U", "I"]) {
+      const hypothesisContext = { ...context, hypothesis };
+      const candidate = evaluatePredicate(predicate, environment, hypothesisContext);
+      if (candidate.code === hypothesis) {
+        kept.push(candidate);
+      }
+    }
+    return combineAnswerHypotheses(kept);
   }
 
   function answerValue(node, environment, context = null) {
     const answer = evaluatePredicate(node.slots?.predicate, environment, context);
-    if (answer.code === "I") return valueError(answer.detail);
-    if (answer.code === "T") return domain("boolean", [true], "answer");
-    if (answer.code === "F") return domain("boolean", [false], "answer");
-    return domain("boolean", [true, false], "answer");
+    return domain("string", [LOGIC_LABELS[answer.code]], "answer");
+  }
+
+  class CharCountError extends Error {}
+
+  // 计算“字数”时忽略的字符：积木自带的空格、括号、花括号、$。
+  const CHAR_COUNT_IGNORE = /[()<>{}$[\]（）\s]/g;
+
+  function countChars(text) {
+    return Array.from(text.replace(CHAR_COUNT_IGNORE, "")).length;
+  }
+
+  // 生成一段仅用于计数的原始文本；除 第x问 外的积木一律不求值，只拼接其文字表示。
+  function charCountText(node, context) {
+    if (!node) return "";
+    if (node.kind === "atom") return String(node.value ?? "");
+    switch (node.type) {
+      case "arithmetic":
+        return charCountText(node.slots?.left, context)
+          + operatorLabel(node.operator, "value")
+          + charCountText(node.slots?.right, context);
+      case "random":
+        return "从" + charCountText(node.slots?.from, context) + "到"
+          + charCountText(node.slots?.to, context) + "的随机变量";
+      case "answerValue":
+        return charCountText(node.slots?.predicate, context) + "的答案";
+      case "answerCharCount":
+        return charCountText(node.slots?.predicate, context) + "的字数";
+      case "currentLine":
+        return "行号";
+      case "currentQuestion":
+        return "问题编号";
+      case "compare":
+        return charCountText(node.slots?.left, context)
+          + operatorLabel(node.operator, "predicate")
+          + charCountText(node.slots?.right, context) + "吗?";
+      case "contains":
+        return charCountText(node.slots?.left, context) + "含有"
+          + charCountText(node.slots?.right, context) + "吗?";
+      case "not":
+        return charCountText(node.slots?.predicate, context) + "不成立" + "吗?";
+      case "isQuestion":
+        return isQuestionCharText(node, context);
+      default:
+        return "";
+    }
+  }
+
+  function isQuestionCharText(node, context) {
+    // 字数计算中，<第(x)问> 默认按字面 “第X问” 计入；若 x 对应一个已经
+    // 回答的问题（0 < x ≤ y，y = 已答数），则展开为该问的判断文本，
+    // 并以 “已答 x-1” 为新边界递归展开其中的嵌套 <第(z)问>。
+    // 任何无法解析/越界/参数非整数的情况都静默回落为字面，
+    // 因此内层 “第 100 问” 之类的判断永远不会阻断总字数。
+    const literal = "第" + charCountText(node.slots?.value, context) + "问";
+    if (!context || context.answeredCount == null) return literal;
+
+    const environment = context.environment || new Map();
+    let x;
+    try {
+      const value = evaluateInput(node.slots?.value, environment, context);
+      if (!value.ok || !isNumeric(value)) return literal;
+      const raw = Number(value.values[0]);
+      if (!Number.isInteger(raw)) return literal;
+      x = raw;
+    } catch {
+      return literal;
+    }
+
+    const y = Number(context.answeredCount);
+    if (x <= 0 || x > y) return literal;
+
+    const prior = context.questionPredicates && context.questionPredicates[x - 1];
+    if (!prior) return literal;
+    return charCountText(prior, { ...context, answeredCount: x - 1 });
+  }
+
+  function answerCharCount(node, environment, context = null) {
+    const countContext = { ...(context || {}), environment };
+    try {
+      const text = charCountText(node.slots?.predicate, countContext);
+      return domain("int", [countChars(text)], "charCount");
+    } catch (error) {
+      if (error instanceof CharCountError) return valueError(error.message);
+      throw error;
+    }
+  }
+
+  // 供 UI 使用：计算判断积木的字数。缺省静态模式（第x问 计字面），传入上下文则按规则递归。
+  function questionCharCount(predicate, context = null) {
+    const countContext = { ...(context || {}) };
+    try {
+      return { ok: true, count: countChars(charCountText(predicate, countContext)) };
+    } catch (error) {
+      if (error instanceof CharCountError) return { ok: false, error: error.message };
+      throw error;
+    }
   }
 
   function evaluateExpression(node, environment = new Map(), context = null) {
@@ -303,6 +440,7 @@
     if (node.type === "arithmetic") return arithmetic(node, environment, context);
     if (node.type === "random") return randomDomain(node, environment, context);
     if (node.type === "answerValue") return answerValue(node, environment, context);
+    if (node.type === "answerCharCount") return answerCharCount(node, environment, context);
     if (node.type === "currentLine") {
       if (!context) return valueError("行号 只能在回答指令中使用");
       return domain("int", [Number(context.line)], "currentLine");
@@ -320,6 +458,8 @@
     const outputs = [];
     const steps = [];
     const loopStack = [];
+    const answerHistory = [];
+    const questionPredicates = [];
     const MAX_LOOP_ITERATIONS = 64;
     let questionCount = 0;
 
@@ -331,10 +471,13 @@
       return captured;
     }
 
-    function runSubCommands(subCommands, label, lineOffset = 0) {
+    function runSubCommands(subCommands, label, lineOffset = 0, enclosingLine = null) {
       for (let subIndex = 0; subIndex < subCommands.length; subIndex += 1) {
         const subCommand = subCommands[subIndex];
-        const line = lineOffset + subIndex + 1;
+        const sourceLine = lineOffset + subIndex + 1;
+        const line = subCommand.type === "repeat"
+          ? sourceLine
+          : (enclosingLine !== null ? enclosingLine : sourceLine);
         if (subCommand.type === "assign") {
           const name = String(subCommand.name || "").trim();
           if (!variableNameIsValid(name)) {
@@ -342,7 +485,12 @@
             steps.push({ index: steps.length, line, type: "assign", name, result: failed, scope: label });
             continue;
           }
-          const result = evaluateInput(subCommand.slots?.value, environment);
+          const countContext = {
+            answeredCount: questionCount,
+            questionPredicates,
+            environment
+          };
+          const result = evaluateInput(subCommand.slots?.value, environment, countContext);
           environment.set(name, result);
           steps.push({ index: steps.length, line, type: "assign", name, result, scope: label });
           continue;
@@ -350,15 +498,28 @@
 
         if (subCommand.type === "answer") {
           questionCount += 1;
-          const context = { line, question: questionCount };
-          const result = evaluatePredicate(subCommand.slots?.predicate, environment, context);
+          questionPredicates[questionCount - 1] = subCommand.slots?.predicate;
+          const context = {
+            line,
+            question: questionCount,
+            answers: answerHistory,
+            questionPredicates,
+            answeredCount: questionCount - 1
+          };
+          const result = evaluateAnswerPredicate(subCommand.slots?.predicate, environment, context);
+          answerHistory[questionCount - 1] = result;
           outputs.push({ index: steps.length, line, question: questionCount, result, scope: label });
           steps.push({ index: steps.length, line, question: questionCount, type: "answer", result, scope: label });
           continue;
         }
 
         if (subCommand.type === "repeat") {
-          const countResult = evaluateInput(subCommand.slots?.count, environment);
+          const countContext = {
+            answeredCount: questionCount,
+            questionPredicates,
+            environment
+          };
+          const countResult = evaluateInput(subCommand.slots?.count, environment, countContext);
           if (!countResult.ok || countResult.type !== "int") {
             const failed = logicError("重复次数必须是整数");
             steps.push({ index: steps.length, line, type: "repeat", result: failed, scope: label });
@@ -379,7 +540,7 @@
               return;
             }
             const scopeLabel = `${label} · 第 ${iteration + 1} 次`;
-            runSubCommands(subCommand.body || [], scopeLabel, line);
+            runSubCommands(subCommand.body || [], scopeLabel, sourceLine, sourceLine);
             if (subCommand.body?.length) {
               const finished = steps[steps.length - 1];
               if (finished?.result?.code === "I" && subCommand.failFast) return;
@@ -571,18 +732,20 @@
       if (token.kind === "char" && token.value === PREDICATE_OPEN) {
         const predicate = parsePredicate();
         const after = peek();
-        if (after && after.kind === "word" && (after.value === "的答案" || after.value === "的")) {
+        if (after && after.kind === "word" && (after.value === "的答案" || after.value === "的字数" || after.value === "的")) {
           take();
+          let suffix = after.value;
           if (after.value === "的") {
             const tail = peek();
-            if (!tail || tail.kind !== "word" || tail.value !== "答案") {
-              throw new ParseError("<...> 之后只能接 “的答案”", position);
+            if (!tail || tail.kind !== "word" || (tail.value !== "答案" && tail.value !== "字数")) {
+              throw new ParseError("<...> 之后只能接 “的答案”或“的字数”", position);
             }
+            suffix = "的" + tail.value;
             take();
           }
           return {
             id: createTempId(),
-            type: "answerValue",
+            type: suffix === "的字数" ? "answerCharCount" : "answerValue",
             slots: { predicate }
           };
         }
@@ -676,6 +839,19 @@
     }
 
     function parsePredicate() {
+      const node = parsePredicateInner();
+      // 后缀形式：<inner> 不成立 吗?
+      const lookahead = tokens[position + 1];
+      if (peek() && peek().kind === "word" && peek().value === "不成立"
+          && lookahead && lookahead.kind === "word" && lookahead.value === "吗?") {
+        take(); // 不成立
+        take(); // 吗?
+        return { id: createTempId(), type: "not", slots: { predicate: node } };
+      }
+      return node;
+    }
+
+    function parsePredicateInner() {
       const token = peek();
       if (!token) throw new ParseError("缺少判断条件", position);
       if (token.kind === "char" && token.value === PREDICATE_OPEN) {
@@ -729,8 +905,19 @@
 
     function finishPredicateWithLeft(left) {
       const token = peek();
+      if (token && token.kind === "word" && COMPARE_OPERATORS[token.value]) {
+        take();
+        const node = {
+          id: createTempId(),
+          type: "compare",
+          operator: COMPARE_OPERATORS[token.value],
+          slots: { left, right: parseValue() }
+        };
+        if (peek() && peek().kind === "word" && peek().value === "吗?") take();
+        return node;
+      }
       if (!token || token.kind !== "word" || !PREDICATE_KEYWORDS[token.value]) {
-        throw new ParseError("(value) 之后需要判断关键字（含有 / 比较）", position);
+        throw new ParseError("(value) 之后需要判断关键字（大于/等于/小于/含有）", position);
       }
       const keyword = PREDICATE_KEYWORDS[token.value];
       if (keyword.type === "not") {
@@ -855,6 +1042,9 @@
     if (node.type === "answerValue") {
       return `(<${printPredicate(node.slots.predicate)}>的答案)`;
     }
+    if (node.type === "answerCharCount") {
+      return `(<${printPredicate(node.slots.predicate)}>的字数)`;
+    }
     if (node.type === "currentLine") return "(行号)";
     if (node.type === "currentQuestion") return "(问题编号)";
     if (node.type === "compare" || node.type === "contains" || node.type === "not" || node.type === "isQuestion") {
@@ -872,7 +1062,7 @@
       return `${printValue(node.slots.left)} 含有 ${printValue(node.slots.right)} 吗?`;
     }
     if (node.type === "not") {
-      return `不成立 <${printPredicate(node.slots.predicate)}> 吗?`;
+      return `${printPredicate(node.slots.predicate)} 不成立 吗?`;
     }
     if (node.type === "isQuestion") {
       return `第 ${printValue(node.slots.value)} 问`;
@@ -919,6 +1109,7 @@
     parse,
     printCommand,
     printValue,
-    printPredicate
+    printPredicate,
+    charCount: questionCharCount
   };
 });

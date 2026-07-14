@@ -89,10 +89,20 @@
       type: "answerValue",
       category: "value",
       shape: "value",
-      description: "把判断结果转成布尔候选域（T → 真、F → 假、U → {真,假}），可作为赋值的输入。",
+      description: "把判断结果转成回答字符串（T→是、F→否、U→不确定、I→无法回答），可作为赋值或比较的输入。",
       parts: [
         { kind: "slot", name: "predicate", accept: "predicate", placeholder: "判断" },
         { kind: "text", text: "的答案" }
+      ]
+    },
+    answerCharCount: {
+      type: "answerCharCount",
+      category: "value",
+      shape: "value",
+      description: "返回方框内问题的字数（忽略积木自带的空格、括号与 $）。除 第x问 外的积木不求值，只按文字表示计数；<第x问> 在 0<x<本题编号 时展开该问的字数，x 等于本题编号视作字符串计入，x 大于本题编号、x≤0 或非整数则报错。",
+      parts: [
+        { kind: "slot", name: "predicate", accept: "predicate", placeholder: "判断" },
+        { kind: "text", text: "的字数" }
       ]
     },
     arithmetic: {
@@ -132,10 +142,10 @@
       type: "isQuestion",
       category: "predicate",
       shape: "predicate",
-      description: "判断当前“回答”是不是第 N 个问题，返回 T 或 F。仅在回答指令的判断孔中可用。",
+      description: "回放第 N 个历史回答的结果：当 0<N<本题编号 时返回该回答的是/否/不确定/无法回答；N 等于本题编号返回 U（因为回答本身仍是可否）；N 大于本题编号、N≤0 或不是整数返回 I。仅在回答指令的判断孔中可用。",
       parts: [
         { kind: "text", text: "第" },
-        { kind: "slot", name: "value", accept: "value", placeholder: "问题号" },
+        { kind: "slot", name: "value", accept: "value", placeholder: "回答编号" },
         { kind: "text", text: "问" }
       ]
     },
@@ -485,6 +495,11 @@
 
     for (const part of scopeParts) {
       block.append(makeScopeBody(node, part, options));
+    }
+
+    if (!options.preview && node.type === "answer") {
+      const counted = engine.charCount(node.slots?.predicate);
+      block.title = counted.ok ? `字数：${counted.count}` : `字数：无法计算（${counted.error}）`;
     }
 
     return block;
@@ -967,7 +982,10 @@
     });
     if (!matches.length) return null;
     matches.sort((a, b) => {
-      if (b.rect.width !== a.rect.width) return b.rect.width - a.rect.width;
+      const areaA = a.rect.width * a.rect.height;
+      const areaB = b.rect.width * b.rect.height;
+      if (areaA !== areaB) return areaA - areaB;
+      if (a.rect.width !== b.rect.width) return a.rect.width - b.rect.width;
       return a.rect.top - b.rect.top;
     });
     return matches[0];
@@ -1024,7 +1042,7 @@
 
   function simulateWorkspaceDrop(node) {
     const index = commands.indexOf(node);
-    if (index < 0) return "empty";
+    if (index < 0) return "ok";
     if (commands.length === 1) return "empty";
     return "ok";
   }
