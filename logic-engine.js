@@ -360,7 +360,7 @@
 
   function combineAnswerHypotheses(kept) {
     if (!kept.length) {
-      return logicError("所有假设均与本题回答矛盾");
+      return logic("I", "假设 T / F / U 均与本题回答矛盾 → 无法回答", null);
     }
     const codes = new Set(kept.map((entry) => entry.code));
     if (codes.has("T") && codes.has("F")) {
@@ -373,13 +373,22 @@
   }
 
   function evaluateAnswerPredicate(predicate, environment, context) {
+    const candidates = [];
     const kept = [];
-    for (const hypothesis of ["T", "F", "U", "I"]) {
+    for (const hypothesis of ["T", "F", "U"]) {
       const hypothesisContext = { ...context, hypothesis };
       const candidate = evaluatePredicate(predicate, environment, hypothesisContext);
+      candidates.push(candidate);
       if (candidate.code === hypothesis) {
         kept.push(candidate);
       }
+    }
+    if (!kept.length) {
+      // 如果所有候选结果都来自结构性错误（例如第几问 越界），透传第一条细节。
+      if (candidates.length && candidates.every((c) => c.code === "I")) {
+        return candidates[0];
+      }
+      return combineAnswerHypotheses(kept);
     }
     return combineAnswerHypotheses(kept);
   }
@@ -522,13 +531,19 @@
       return captured;
     }
 
-    function runSubCommands(subCommands, label, lineOffset = 0, enclosingLine = null) {
+    function runSubCommands(subCommands, label, lineOffset = 0, enclosingLine = null, topLevelIndex = null) {
       for (let subIndex = 0; subIndex < subCommands.length; subIndex += 1) {
         const subCommand = subCommands[subIndex];
         const sourceLine = lineOffset + subIndex + 1;
-        const line = subCommand.type === "repeat"
-          ? sourceLine
-          : (enclosingLine !== null ? enclosingLine : sourceLine);
+        const effectiveTopLevel = topLevelIndex !== null ? topLevelIndex : (subIndex + 1);
+        let line;
+        if (subCommand.type === "repeat") {
+          line = sourceLine;
+        } else if (subCommand.type === "answer") {
+          line = effectiveTopLevel;
+        } else {
+          line = enclosingLine !== null ? enclosingLine : sourceLine;
+        }
         if (subCommand.type === "assign") {
           const name = String(subCommand.name || "").trim();
           if (!variableNameIsValid(name)) {
@@ -592,7 +607,7 @@
               return;
             }
             const scopeLabel = `${label} · 第 ${iteration + 1} 次`;
-            runSubCommands(subCommand.body || [], scopeLabel, sourceLine, sourceLine);
+            runSubCommands(subCommand.body || [], scopeLabel, sourceLine, sourceLine, effectiveTopLevel);
             if (subCommand.body?.length) {
               const finished = steps[steps.length - 1];
               if (finished?.result?.code === "I" && subCommand.failFast) return;
@@ -1122,12 +1137,13 @@
     return `<未知判断 ${node.type}>`;
   }
 
-  function printCommand(command) {
+  function printCommand(command, line = null) {
     if (command.type === "assign") {
       return `[赋值 (${command.name}) = ${printValue(command.slots.value)}]`;
     }
     if (command.type === "answer") {
-      return `[回答 <${printPredicate(command.slots.predicate)}>]`;
+      const tag = Number.isInteger(line) && line > 0 ? `  # L${line}` : "";
+      return `[回答 <${printPredicate(command.slots.predicate)}>]${tag}`;
     }
     if (command.type === "repeat") {
       const body = (command.body || []).map((entry) => `  ${printCommand(entry)}`).join("\n");

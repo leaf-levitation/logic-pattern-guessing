@@ -63,9 +63,12 @@
       <div class="workspace-column">
         <section class="panel workspace-panel" aria-labelledby="workspace-heading">
           <div class="panel-heading workspace-heading">
-            <div>
-              <p class="section-kicker">WORKSPACE</p>
-              <h2 id="workspace-heading">逻辑工作区</h2>
+            <div class="workspace-title">
+              <div>
+                <p class="section-kicker">WORKSPACE</p>
+                <h2 id="workspace-heading">逻辑工作区</h2>
+              </div>
+              <div class="tab-bar" id="tab-bar" role="tablist" aria-label="工作区切换"></div>
             </div>
             <div class="workspace-meta">
               <span id="command-count">0 条指令</span>
@@ -185,7 +188,8 @@
       </header>
       <p class="text-modal-tip">
         使用 <code>( )</code> 嵌套变量积木、<code>[ ]</code> 声明指令积木、<code>&lt; &gt;</code> 表示六边形判断积木、<code>{ }</code> 声明循环作用域。<br>
-        示例：<code>[重复 (3) { [回答 &lt;(从(1)到(6)的随机变量) 大于 (3) 吗?&gt;] }]</code>
+        多工作区模式下，每个工作区以 <code># === Tab N: 名称 ===</code> 分隔；每个 <code>[回答]</code> 后附带 <code># L&lt;n&gt;</code> 标注其在工作区内的行号。
+        示例：<code>[回答 &lt;(从(1)到(6)的随机变量) 大于 (3) 吗?&gt;]  # L1</code>
       </p>
       <textarea id="text-input" class="text-input" spellcheck="false" aria-label="文字表示编辑区"></textarea>
       <div class="text-modal-errors" id="text-errors" aria-live="polite"></div>

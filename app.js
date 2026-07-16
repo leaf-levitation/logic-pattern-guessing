@@ -206,16 +206,57 @@
     testsEnterButton: document.querySelector("#tests-enter"),
     testsModal: document.querySelector("#tests-modal"),
     testsModalTitle: document.querySelector("#tests-modal-title"),
-    testsModalSummary: document.querySelector("#tests-modal-summary")
+    testsModalSummary: document.querySelector("#tests-modal-summary"),
+    tabBar: document.querySelector("#tab-bar")
   };
 
-  let commands = [];
   let activeSlot = null;
   let dragState = null;
   let pointerDrag = null;
   let toastTimer = null;
   let suppressNextClick = false;
   let idSequence = 0;
+
+  const MAX_TABS = 8;
+  const DEFAULT_TAB_COUNT = 3;
+  let tabs = [];
+  let activeTabId = null;
+  let commands = []; // active tab's commands array; reassigned via assignCommands() / loadActiveTab()
+
+  function activeTab() {
+    return tabs.find((entry) => entry.id === activeTabId) || null;
+  }
+
+  function makeTabId() {
+    return "tab-" + Math.random().toString(36).slice(2, 8);
+  }
+
+  function defaultTabs() {
+    const result = [];
+    for (let i = 0; i < DEFAULT_TAB_COUNT; i += 1) {
+      result.push({ id: makeTabId(), name: `工作区 ${i + 1}`, commands: [] });
+    }
+    return result;
+  }
+
+  function loadActiveTab() {
+    const tab = activeTab();
+    commands = tab ? tab.commands : [];
+    return commands;
+  }
+
+  function assignCommands(arr) {
+    const tab = activeTab();
+    if (tab) tab.commands = arr;
+    commands = arr;
+  }
+
+  function assignCommandsToTab(tabId, arr) {
+    const tab = tabs.find((entry) => entry.id === tabId);
+    if (tab) tab.commands = arr;
+    if (tabId === activeTabId) commands = arr;
+    queueSaveStoredTabs();
+  }
 
   const CHAR_WIDTH = 6.6;
   const INPUT_PADDING = 12;
@@ -612,6 +653,7 @@
 
     elements.emptyWorkspace.hidden = commands.length > 0;
     elements.commandCount.textContent = `${commands.length} 条指令`;
+    queueSaveStoredTabs();
   }
 
   function emptyVariables() {
@@ -691,7 +733,7 @@
     }
   }
 
-  function makeResultCard(code, title, detail) {
+  function makeResultCard(code, title) {
     const card = document.createElement("article");
     card.className = "result-card";
     card.dataset.logic = code;
@@ -706,10 +748,7 @@
     heading.textContent = title;
     head.append(codeBadge, heading);
 
-    const body = document.createElement("p");
-    body.className = "result-detail";
-    body.textContent = detail || "判断完成";
-    card.append(head, body);
+    card.append(head);
     return card;
   }
 
@@ -743,11 +782,7 @@
       const lineLabel = `第${step.line}行`;
       if (step.type === "answer") {
         const title = `${lineLabel} · 第${step.question}问 · ${step.result.label}`;
-        answerCards.push(makeResultCard(
-          step.result.code,
-          title,
-          step.result.detail
-        ));
+        answerCards.push(makeResultCard(step.result.code, title));
         consoleEntries.push(makeConsoleEntry(
           step.result.code === "I" ? "error" : "info",
           title,
@@ -815,8 +850,67 @@
     toastTimer = window.setTimeout(() => elements.toast.classList.remove("is-visible"), 2200);
   }
 
+  function buildLineMap(cmds) {
+    const map = new Map();
+    function visit(list, outerIndex) {
+      for (const cmd of list) {
+        if (cmd.type === "answer") map.set(cmd.id, outerIndex);
+        else if (cmd.type === "repeat") visit(cmd.body || [], outerIndex);
+      }
+    }
+    let outerIndex = 1;
+    for (const cmd of cmds) {
+      if (cmd.type === "answer") map.set(cmd.id, outerIndex);
+      else if (cmd.type === "repeat") visit(cmd.body || [], outerIndex);
+      outerIndex += 1;
+    }
+    return map;
+  }
+
+  function printTabCommands(cmds) {
+    if (!Array.isArray(cmds) || !cmds.length) return "";
+    const lineMap = buildLineMap(cmds);
+    return cmds
+      .map((cmd) => engine.printCommand(cmd, lineMap.get(cmd.id) || null))
+      .join("\n");
+  }
+
   function programToText() {
-    return commands.map((command) => engine.printCommand(command)).join("\n");
+    if (tabs.length <= 1) {
+      return printTabCommands(commands);
+    }
+    return tabs
+      .map((tab, index) => {
+        const body = printTabCommands(tab.commands);
+        const head = `# === Tab ${index + 1}: ${tab.name} ===`;
+        return body ? `${head}\n${body}` : head;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  function stripLineTags(text) {
+    return text.replace(/\s*#\s*L\d+/g, "");
+  }
+
+  function parseTabSections(text) {
+    // Returns [{ tabIndex (1-based), body }] from text with optional # === Tab N: name === headers.
+    if (!text) return [];
+    const headerPattern = /^\s*#?\s*===\s*Tab\s+(\d+)\s*(?::\s*(.*?))?\s*===\s*$/;
+    const lines = text.split(/\r?\n/);
+    const sections = [];
+    let current = null;
+    for (const line of lines) {
+      const match = line.match(headerPattern);
+      if (match) {
+        if (current) sections.push(current);
+        current = { tabIndex: parseInt(match[1], 10), body: "" };
+      } else if (current) {
+        current.body += (current.body ? "\n" : "") + line;
+      }
+    }
+    if (current) sections.push(current);
+    return sections;
   }
 
   function renderTextErrors(message) {
@@ -848,9 +942,9 @@
       showToast("通关检测模式下不可改写工作区");
       return;
     }
-    const source = elements.textInput.value.trim();
-    if (!source) {
-      commands = [];
+    const rawText = elements.textInput.value;
+    if (!rawText.trim()) {
+      assignCommands([]);
       activeSlot = null;
       renderWorkspace();
       clearExecution();
@@ -859,13 +953,52 @@
       return;
     }
     try {
-      const program = engine.parse(source);
-      commands = program;
+      const sections = parseTabSections(stripLineTags(rawText));
+      if (sections.length <= 1 && tabs.length <= 1) {
+        // 单一工作区 + 单一区段：直接覆盖当前工作区。
+        const program = engine.parse(stripLineTags(rawText));
+        assignCommands(program);
+        activeSlot = null;
+        renderWorkspace();
+        clearExecution();
+        closeTextModal();
+        showToast(`已导入 ${program.length} 条指令`);
+        return;
+      }
+      // 多工作区模式：按区段分发到对应 tab。
+      let updated = 0;
+      let firstError = null;
+      const sectionByIndex = new Map();
+      for (const sec of sections) sectionByIndex.set(sec.tabIndex, sec);
+      for (let i = 0; i < tabs.length; i += 1) {
+        const sec = sectionByIndex.get(i + 1);
+        if (!sec) continue;
+        const body = sec.body.trim();
+        if (!body) {
+          if (tabs[i].commands.length) {
+            assignCommandsToTab(tabs[i].id, []);
+            updated += 1;
+          }
+          continue;
+        }
+        try {
+          const program = engine.parse(body);
+          assignCommandsToTab(tabs[i].id, program);
+          updated += 1;
+        } catch (error) {
+          if (!firstError) firstError = `Tab ${i + 1} 解析失败：${error.message}`;
+        }
+      }
+      if (firstError) {
+        renderTextErrors(firstError);
+        return;
+      }
+      loadActiveTab();
       activeSlot = null;
       renderWorkspace();
       clearExecution();
       closeTextModal();
-      showToast(`已导入 ${program.length} 条指令`);
+      showToast(`已更新 ${updated} 个工作区`);
     } catch (error) {
       renderTextErrors(`解析失败：${error.message}`);
     }
@@ -1054,6 +1187,9 @@
     const trash = element?.closest?.("#trash-zone");
     if (trash && dragState.source === "workspace") return { kind: "trash" };
 
+    const library = element?.closest?.("#block-library");
+    if (library && dragState.source === "workspace") return { kind: "library" };
+
     const hit = pickNestedTarget(point);
     if (hit) {
       if (hit.kind === "slot") {
@@ -1121,6 +1257,8 @@
       elements.workspace.parentElement?.classList.add("is-drop-target");
     } else if (target?.kind === "trash") {
       elements.trashZone.classList.add("is-drop-target");
+    } else if (target?.kind === "library") {
+      elements.library?.classList.add("is-drop-target");
     } else if (dragState.source === "workspace" && dragState.shape === "command") {
       const dragged = findNode(dragState.nodeId)?.node;
       if (dragged && simulateWorkspaceDrop(dragged) === "empty") {
@@ -1141,7 +1279,7 @@
   function performDrop(target) {
     if (!target || !dragState) return false;
 
-    if (target.kind === "trash") {
+    if (target.kind === "trash" || target.kind === "library") {
       if (dragState.source !== "workspace") return false;
       detachNode(dragState.nodeId);
       activeSlot = null;
@@ -1283,7 +1421,7 @@
     loopAnswerSix.slots.predicate = loopContains;
     loop.body = [loopAnswer, loopAnswerSix];
 
-    commands = [assignChance, answerMembership, assignDoubled, assignConclusion, answerNegation, assignText, answerText, loop];
+    assignCommands([assignChance, answerMembership, assignDoubled, assignConclusion, answerNegation, assignText, answerText, loop]);
     activeSlot = null;
     renderWorkspace();
     clearExecution();
@@ -1462,7 +1600,7 @@
       showToast("工作区已经是空的");
       return;
     }
-    commands = [];
+    assignCommands([]);
     activeSlot = null;
     renderWorkspace();
     clearExecution();
@@ -1494,7 +1632,9 @@
     levels: "guess-conditions:levels",
     manual: "guess-conditions:manual",
     progress: "guess-conditions:progress",
-    predictions: "guess-conditions:predictions"
+    predictions: "guess-conditions:predictions",
+    testId: "guess-conditions:test-id",
+    tabs: "guess-conditions:tabs"
   };
 
   let levelsData = { levels: [] };
@@ -1502,6 +1642,7 @@
   let currentLevelId = null;
   let levelProgress = {};
   let testPredictionsByLevel = {};
+  let testIdByLevel = {};
 
   async function loadLevelsData() {
     const stored = localStorage.getItem(STORAGE_KEYS.levels);
@@ -1573,6 +1714,203 @@
     localStorage.setItem(STORAGE_KEYS.predictions, JSON.stringify(testPredictionsByLevel));
   }
 
+  function loadStoredTestId() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.testId);
+      testIdByLevel = raw ? JSON.parse(raw) : {};
+      if (!testIdByLevel || typeof testIdByLevel !== "object") testIdByLevel = {};
+    } catch {
+      testIdByLevel = {};
+    }
+  }
+
+  function saveStoredTestId() {
+    localStorage.setItem(STORAGE_KEYS.testId, JSON.stringify(testIdByLevel));
+  }
+
+  function pickTestForLevel(level) {
+    if (!level || !Array.isArray(level.tests) || !level.tests.length) return null;
+    const stored = testIdByLevel[level.id];
+    if (stored && level.tests.some((entry) => entry.id === stored)) return stored;
+    const choice = level.tests[Math.floor(Math.random() * level.tests.length)];
+    testIdByLevel[level.id] = choice.id;
+    saveStoredTestId();
+    return choice.id;
+  }
+
+  function resetPickedTest(levelId) {
+    if (!levelId) return;
+    if (testIdByLevel[levelId]) {
+      delete testIdByLevel[levelId];
+      saveStoredTestId();
+    }
+  }
+
+  function loadStoredTabs() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.tabs);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length >= 1) {
+          const sanitized = parsed
+            .filter((entry) => entry && typeof entry === "object" && Array.isArray(entry.commands))
+            .slice(0, MAX_TABS)
+            .map((entry, index) => ({
+              id: typeof entry.id === "string" ? entry.id : makeTabId(),
+              name: typeof entry.name === "string" && entry.name.trim() ? entry.name : `工作区 ${index + 1}`,
+              commands: entry.commands
+            }));
+          if (sanitized.length) return sanitized;
+        }
+      }
+    } catch {}
+    return defaultTabs();
+  }
+
+  function saveStoredTabs() {
+    try {
+      const payload = tabs.map((entry) => ({
+        id: entry.id,
+        name: entry.name,
+        commands: entry.commands
+      }));
+      localStorage.setItem(STORAGE_KEYS.tabs, JSON.stringify(payload));
+    } catch (error) {
+      console.warn("保存工作区标签失败", error);
+    }
+  }
+
+  let saveTabsTimer = null;
+  function queueSaveStoredTabs() {
+    clearTimeout(saveTabsTimer);
+    saveTabsTimer = setTimeout(saveStoredTabs, 220);
+  }
+
+  function ensureTabDataShape() {
+    if (!Array.isArray(tabs) || !tabs.length) {
+      tabs = defaultTabs();
+    }
+    if (!tabs.some((entry) => entry.id === activeTabId)) {
+      activeTabId = tabs[0].id;
+    }
+  }
+
+  function switchToTab(tabId) {
+    ensureTabDataShape();
+    if (tabId === activeTabId) return;
+    if (!tabs.some((entry) => entry.id === tabId)) return;
+    if (testMode) exitTestMode();
+    activeTabId = tabId;
+    loadActiveTab();
+    activeSlot = null;
+    renderWorkspace();
+    renderTabBar();
+    saveStoredTabs();
+    clearExecution();
+    showToast(`已切换到「${currentTabName()}」`);
+  }
+
+  function currentTabName() {
+    const tab = activeTab();
+    return tab ? tab.name : "";
+  }
+
+  function addTab() {
+    ensureTabDataShape();
+    if (tabs.length >= MAX_TABS) {
+      showToast(`最多 ${MAX_TABS} 个工作区`);
+      return;
+    }
+    const newTab = {
+      id: makeTabId(),
+      name: `工作区 ${tabs.length + 1}`,
+      commands: []
+    };
+    tabs.push(newTab);
+    switchToTab(newTab.id);
+  }
+
+  function closeTab(tabId) {
+    ensureTabDataShape();
+    if (tabs.length <= 1) {
+      showToast("至少保留 1 个工作区");
+      return;
+    }
+    const index = tabs.findIndex((entry) => entry.id === tabId);
+    if (index < 0) return;
+    tabs.splice(index, 1);
+    saveStoredTabs();
+    if (tabId === activeTabId || !activeTabId) {
+      const fallbackIndex = Math.min(index, tabs.length - 1);
+      activeTabId = tabs[fallbackIndex].id;
+    }
+    loadActiveTab();
+    activeSlot = null;
+    renderTabBar();
+    renderWorkspace();
+    clearExecution();
+  }
+
+  function renameActiveTab(newName) {
+    const tab = activeTab();
+    if (!tab) return;
+    const trimmed = String(newName || "").trim();
+    if (!trimmed || trimmed === tab.name) return;
+    tab.name = trimmed.slice(0, 24);
+    saveStoredTabs();
+    renderTabBar();
+  }
+
+  function renderTabBar() {
+    if (!elements.tabBar) return;
+    elements.tabBar.replaceChildren();
+    tabs.forEach((tab) => {
+      const pill = document.createElement("div");
+      pill.className = "tab-pill" + (tab.id === activeTabId ? " is-active" : "");
+      pill.setAttribute("role", "tab");
+      pill.setAttribute("aria-selected", String(tab.id === activeTabId));
+
+      const name = document.createElement("span");
+      name.className = "tab-name";
+      name.textContent = tab.name;
+      name.title = tab.name;
+      name.addEventListener("dblclick", (event) => {
+        event.stopPropagation();
+        if (tab.id !== activeTabId) return;
+        const next = prompt("重命名工作区：", tab.name);
+        if (next !== null) renameActiveTab(next);
+      });
+      pill.append(name);
+
+      if (tabs.length > 1) {
+        const closeBtn = document.createElement("span");
+        closeBtn.className = "tab-close";
+        closeBtn.textContent = "×";
+        closeBtn.title = "删除该工作区";
+        closeBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          closeTab(tab.id);
+        });
+        pill.append(closeBtn);
+      }
+
+      pill.addEventListener("click", (event) => {
+        if (event.target.closest(".tab-close")) return;
+        switchToTab(tab.id);
+      });
+      elements.tabBar.append(pill);
+    });
+    if (tabs.length < MAX_TABS) {
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "tab-add";
+      addBtn.textContent = "+";
+      addBtn.title = "新增工作区";
+      addBtn.addEventListener("click", addTab);
+      elements.tabBar.append(addBtn);
+    }
+  }
+
   function currentLevel() {
     return levelsData.levels.find((entry) => entry.id === currentLevelId) || null;
   }
@@ -1630,9 +1968,9 @@
 
     const demoSource = (level.demoProgram || []).join("\n");
     try {
-      commands = demoSource.trim() ? engine.parse(demoSource) : [];
+      assignCommands(demoSource.trim() ? engine.parse(demoSource) : []);
     } catch (error) {
-      commands = [];
+      assignCommands([]);
       showToast(`示例程序解析失败：${error.message}`);
     }
     activeSlot = null;
@@ -1722,27 +2060,33 @@
     }
     if (testMode) return;
 
+    const pickedId = pickTestForLevel(level);
+    const pickedTest = level.tests.find((entry) => entry.id === pickedId);
+    if (!pickedTest) {
+      showToast("无法挑选预测题，请稍后再试");
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = engine.parse(pickedTest.program || "");
+    } catch (error) {
+      showToast(`预测题解析失败：${error.message}`);
+      return;
+    }
+
     commandsBeforeTest = commands.slice();
     commands = [];
     testPredictionsByLevel[currentLevelId] = testPredictionsByLevel[currentLevelId] || {};
     predictionByNodeId.clear();
 
-    level.tests.forEach((test, testIndex) => {
-      let parsed;
-      try {
-        parsed = engine.parse(test.program || "");
-      } catch (error) {
-        showToast(`预测题解析失败：${error.message}`);
-        return;
+    let qIdx = 0;
+    parsed.forEach((cmd) => {
+      commands.push(cmd);
+      if (cmd.type === "answer") {
+        predictionByNodeId.set(cmd.id, { testId: pickedTest.id, testIndex: 0, qIdx });
+        qIdx += 1;
       }
-      let qIdx = 0;
-      parsed.forEach((cmd) => {
-        commands.push(cmd);
-        if (cmd.type === "answer") {
-          predictionByNodeId.set(cmd.id, { testId: test.id, testIndex, qIdx });
-          qIdx += 1;
-        }
-      });
     });
 
     testMode = true;
@@ -1891,45 +2235,43 @@
     if (!level) return null;
     const conditionFn = engine.buildCondition(level.condition);
     const rows = [];
-    let allCorrect = true;
+    let allCorrect = false;
     let missingAny = false;
 
-    level.tests.forEach((test, testIndex) => {
-      let commands;
-      try {
-        commands = engine.parse(test.program);
-      } catch (error) {
-        rows.push({ testIndex, test, predictions: [], actuals: [], error: error.message });
-        allCorrect = false;
-        missingAny = true;
-        return;
-      }
-      const execution = engine.execute(commands, conditionFn ? { condition: conditionFn } : undefined);
-      const actuals = execution.outputs.map((output) => output.result.code);
-      const predictions = (testPredictionsByLevel[level.id] &&
-        testPredictionsByLevel[level.id][test.id]) || [];
-      const expected = (expectedOutputs(test) || []).slice();
-      const matchesExpected = expected.length === actuals.length &&
-        expected.every((code, i) => code === actuals[i]);
-      const correctPredictions = predictions.length === actuals.length &&
-        predictions.length > 0 &&
-        predictions.every((code, i) => code === actuals[i]);
-      const filled = predictions.length === actuals.length && predictions.every((code) => code);
-      if (!filled || !correctPredictions) {
-        allCorrect = false;
-        if (!filled) missingAny = true;
-      }
-      rows.push({
-        testIndex,
-        test,
-        predictions: predictions.slice(),
-        actuals,
-        expected,
-        matchesExpected,
-        correctPredictions,
-        filled,
-        error: null
-      });
+    const pickedId = pickTestForLevel(level);
+    const test = level.tests.find((entry) => entry.id === pickedId);
+    if (!test) {
+      return { level, rows, allCorrect: false, missingAny: true };
+    }
+
+    let parsedTest;
+    try {
+      parsedTest = engine.parse(test.program);
+    } catch (error) {
+      rows.push({ testIndex: 0, test, predictions: [], actuals: [], error: error.message });
+      return { level, rows, allCorrect: false, missingAny: true };
+    }
+    const execution = engine.execute(parsedTest, conditionFn ? { condition: conditionFn } : undefined);
+    const actuals = execution.outputs.map((output) => output.result.code);
+    const predictions = (testPredictionsByLevel[level.id] &&
+      testPredictionsByLevel[level.id][test.id]) || [];
+    const expected = (expectedOutputs(test) || []).slice();
+    const matchesExpected = expected.length === actuals.length &&
+      expected.every((code, i) => code === actuals[i]);
+    const filled = predictions.length === actuals.length && predictions.every((code) => code);
+    const correctPredictions = filled && predictions.every((code, i) => code === actuals[i]);
+    allCorrect = correctPredictions;
+    if (!filled) missingAny = true;
+    rows.push({
+      testIndex: 0,
+      test,
+      predictions: predictions.slice(),
+      actuals,
+      expected,
+      matchesExpected,
+      correctPredictions,
+      filled,
+      error: null
     });
 
     return { level, rows, allCorrect, missingAny };
@@ -1943,15 +2285,13 @@
 
   function showTestsModal(evaluation) {
     const { level, allCorrect, missingAny } = evaluation;
-    const { rows } = evaluation;
-    const total = rows.length;
 
     elements.testsModalTitle.textContent = allCorrect
       ? `恭喜通关「${level.title}」`
       : "未完全通过，再检查一下";
     elements.testsModalSummary.dataset.state = allCorrect ? "passed" : "failed";
     if (allCorrect) {
-      elements.testsModalSummary.textContent = `本轮 ${total} / ${total} 题全部命中，可继续挑战下一关。`;
+      elements.testsModalSummary.textContent = `本轮随机题已全部命中，可继续挑战下一关。`;
     } else if (missingAny) {
       elements.testsModalSummary.textContent = `还有未作答的题目，请回到工作区补全预测。`;
     } else {
@@ -1963,6 +2303,7 @@
         levelProgress[level.id] = true;
         saveStoredProgress();
       }
+      resetPickedTest(level.id);
       renderLevelSelector();
       updateLevelProgressBadge();
     }
@@ -2001,7 +2342,11 @@
   async function bootstrapGame() {
     loadStoredProgress();
     loadStoredPredictions();
+    loadStoredTestId();
+    tabs = loadStoredTabs();
+    activeTabId = tabs[0]?.id || null;
     await Promise.all([loadLevelsData(), loadManualText()]);
+    renderTabBar();
     if (levelsData.levels.length) {
       selectLevel(levelsData.levels[0].id);
     } else {

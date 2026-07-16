@@ -415,12 +415,14 @@ test("重复内层非重复积木继承外层行号", () => {
   assert.equal(execution.outputs[2].line, 3);
 });
 
-test("嵌套重复保留各自行号，内部积木使用最近重复", () => {
+test("嵌套重复内回答按最外层顶层编号", () => {
+  // 所有 [回答] 的 行号 = 其外层最接近顶层命令的 1-based 索引。
+  // 顶层 [回答] 与「外层是顶层」的 [重复] 内层回答，共用同一行号。
   const program = engine.parse([
-    "[回答 <比较 (行号) 等于 (1) 吗?>]",   // line 1
-    "[重复 (1) {",                          // line 2 — outer
-    "  [回答 <比较 (行号) 等于 (2) 吗?>]",   // line 3 — should use outer's line=2
-    "  [重复 (1) { [回答 <比较 (行号) 等于 (4) 吗?>] }]", // line 4 — inner repeat keeps own line; answer inside uses line=4
+    "[回答 <比较 (行号) 等于 (1) 吗?>]",   // top-level, line 1
+    "[重复 (1) {",                          // outer top-level at subIdx=1
+    "  [回答 <比较 (行号) 等于 (2) 吗?>]",   // inside outer, inherits outer's top-level idx=2
+    "  [重复 (1) { [回答 <比较 (行号) 等于 (2) 吗?>] }]", // inner-inside-outer still inherits outer's idx=2
     "}]"
   ].join("\n"));
 
@@ -430,19 +432,20 @@ test("嵌套重复保留各自行号，内部积木使用最近重复", () => {
     ["T", "T", "T"]
   );
   assert.equal(execution.outputs[0].line, 1);
-  assert.equal(execution.outputs[1].line, 2); // uses outer repeat's line
-  assert.equal(execution.outputs[2].line, 4); // uses innermost repeat's line
+  assert.equal(execution.outputs[1].line, 2);
+  assert.equal(execution.outputs[2].line, 2); // shared with outer repeat's top-level index
 });
 
-test("三层以上重复嵌套仍按最内层重复标行号", () => {
+test("多层重复嵌套内回答共享最外层顶层编号", () => {
+  // 任意深度的 [重复] 嵌套，内层 [回答] 都继承最外层 [重复] 的顶层索引。
   const program = engine.parse([
-    "[回答 <比较 (行号) 等于 (1) 吗?>]",   // L1 — top-level answer
-    "[重复 (1) {",                          // L2 — outer repeat opens
-    "  [回答 <比较 (行号) 等于 (2) 吗?>]",   // L3 — outer body, uses outer's line=2
-    "  [重复 (1) {",                        // L4 — middle repeat opens (in outer body)
-    "    [回答 <比较 (行号) 等于 (4) 吗?>]", // L5 — middle body, uses middle's line=4
-    "    [重复 (1) { [回答 <比较 (行号) 等于 (6) 吗?>] } ]", // L6 — inner repeat (in middle body); its answer uses inner's line=6
-    "} ]",                                  // close middle scope `}` and middle bracket `]`
+    "[回答 <比较 (行号) 等于 (1) 吗?>]",   // top-level, line 1
+    "[重复 (1) {",                          // outer at top subIdx=1
+    "  [回答 <比较 (行号) 等于 (2) 吗?>]",   // in outer body, line 2
+    "  [重复 (1) {",                        // mid in outer body
+    "    [回答 <比较 (行号) 等于 (2) 吗?>]", // in mid body, inherits outer line=2
+    "    [重复 (1) { [回答 <比较 (行号) 等于 (2) 吗?>] } ]", // in inner body, still line=2
+    "} ]",                                  // close mid scope + mid bracket
     "}",                                    // close outer scope
     "]"                                     // close outer bracket
   ].join("\n"));
@@ -455,17 +458,17 @@ test("三层以上重复嵌套仍按最内层重复标行号", () => {
   );
   assert.deepEqual(
     execution.outputs.map((output) => output.line),
-    [1, 2, 4, 6]
+    [1, 2, 2, 2]
   );
 });
 
-test("嵌套重复内层与外层同源行号时分别标记", () => {
-  // 测试两个并列的重复块，一个内嵌重复一个外层直接回答
+test("顶层回答继承独立顶层编号，与内嵌回答错开", () => {
+  // 顶层最末 `[回答]` 占据新的顶层序号，与前面 [重复] 内的 [回答] 互不冲突。
   const program = engine.parse([
-    "[回答 <比较 (行号) 等于 (1) 吗?>]",   // line 1
-    "[重复 (1) { [回答 <比较 (行号) 等于 (2) 吗?>] }]", // line 2 — outer only, answer uses outer line=2
-    "[重复 (1) { [重复 (1) { [回答 <比较 (行号) 等于 (4) 吗?>] }] }]", // line 3 outer, line 4 inner — answer uses inner line=4
-    "[回答 <比较 (行号) 等于 (4) 吗?>]"    // line 4
+    "[回答 <比较 (行号) 等于 (1) 吗?>]",                              // top subIdx=0, line=1
+    "[重复 (1) { [回答 <比较 (行号) 等于 (2) 吗?>] }]",                // inside outer at subIdx=1, line=2
+    "[重复 (1) { [重复 (1) { [回答 <比较 (行号) 等于 (3) 吗?>] }] }]",  // inside inner inside outer at subIdx=2, line=3
+    "[回答 <比较 (行号) 等于 (4) 吗?>]"                                // top subIdx=3, line=4
   ].join("\n"));
 
   const execution = engine.execute(program);
@@ -475,7 +478,7 @@ test("嵌套重复内层与外层同源行号时分别标记", () => {
   );
   assert.deepEqual(
     execution.outputs.map((output) => output.line),
-    [1, 2, 4, 4]
+    [1, 2, 3, 4]
   );
 });
 
