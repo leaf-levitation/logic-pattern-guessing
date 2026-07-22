@@ -1964,8 +1964,9 @@
 
   // ============== 猜条件 · 解谜闯关 ==============
 
+  // 关卡 schema 升级时把 :v1 改成 :v2,旧 localStorage 自动作废
   const STORAGE_KEYS = {
-    levels: "guess-conditions:levels",
+    levels: "guess-conditions:levels:v1",
     manual: "guess-conditions:manual",
     progress: "guess-conditions:progress",
     predictions: "guess-conditions:predictions",

@@ -155,7 +155,7 @@
       subtitle: "",
       hint: "",
       condition: "truth",
-      demoProgram: ["[回答 <比较 (3) 大于 (2) 吗?>]"],
+      demoProgram: [],
       tests: []
     };
     data.levels.push(newLevel);
