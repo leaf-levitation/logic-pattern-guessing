@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="基于四值逻辑的解谜闯关游戏：推断每关隐藏的条件">
+  <meta description="基于四值逻辑的解谜闯关游戏：推断每关隐藏的条件">
   <title>猜条件 · 解谜闯关</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
+    <header class="menu-bar" role="menubar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">
           <i></i><i></i><i></i>
@@ -20,26 +20,53 @@
         </div>
       </div>
 
-      <div class="level-selector" aria-label="关卡选择">
-        <label class="level-label" for="level-select">关卡</label>
-        <div class="level-select-wrap">
-          <select id="level-select" class="level-select" aria-label="选择关卡"></select>
-          <span class="level-progress" id="level-progress" data-state="locked" hidden>未通关</span>
+      <nav class="menu-bar-items" aria-label="主菜单">
+        <div class="menu-item" data-menu="level">
+          <button class="menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">关卡</button>
+          <ul class="menu-dropdown" role="menu" hidden>
+            <li role="none"><button role="menuitem" data-window="level-picker" type="button">选关</button></li>
+            <li role="none" class="menu-submenu">
+              <button role="menuitem" aria-haspopup="true" type="button">提示</button>
+              <ul class="menu-dropdown menu-dropdown-sub" role="menu" hidden>
+                <li role="none"><button role="menuitem" data-action="load-example" type="button">载入示例</button></li>
+                <li role="none"><button role="menuitem" data-window="level-hint" type="button">查看提示</button></li>
+              </ul>
+            </li>
+            <li role="none"><button role="menuitem" data-window="checkpoint" type="button">通关检测</button></li>
+            <li role="none"><button role="menuitem" data-window="level-editor" type="button">关卡编辑器</button></li>
+          </ul>
         </div>
-        <p class="level-hint" id="level-hint"></p>
-      </div>
 
-      <div class="topbar-actions" aria-label="工作区操作">
-        <button class="icon-button help-button" id="manual-button" type="button" aria-label="查看说明">?</button>
-        <a class="button button-ghost" id="editor-link" href="level-editor.html">关卡编辑器</a>
+        <div class="menu-item" data-menu="game">
+          <button class="menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">游戏</button>
+          <ul class="menu-dropdown" role="menu" hidden>
+            <li role="none"><button role="menuitem" data-window="text-format" type="button">导入 / 导出</button></li>
+            <li role="none"><button role="menuitem" data-window="variables" type="button">查看变量</button></li>
+          </ul>
+        </div>
+
+        <div class="menu-item" data-menu="extension">
+          <button class="menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">扩展</button>
+          <ul class="menu-dropdown" role="menu" hidden>
+            <li role="none"><button role="menuitem" data-window="extensions-placeholder" type="button">暂无扩展</button></li>
+          </ul>
+        </div>
+
+        <div class="menu-item" data-menu="help">
+          <button class="menu-trigger" type="button" aria-haspopup="true" aria-expanded="false">帮助</button>
+          <ul class="menu-dropdown" role="menu" hidden>
+            <li role="none"><button role="menuitem" data-window="manual" type="button">积木手册</button></li>
+          </ul>
+        </div>
+      </nav>
+
+      <div class="menu-bar-spacer"></div>
+
+      <div class="menu-bar-run">
         <span class="run-status" id="run-status" data-state="idle">
           <span class="status-dot"></span>
           <span>等待运行</span>
         </span>
-        <button class="button button-ghost" id="example-button" type="button">载入示例</button>
-        <button class="button button-ghost" id="text-button" type="button">文字表示</button>
-        <button class="button button-ghost" id="tests-enter" type="button">进入通关检测</button>
-        <button class="button button-ghost danger" id="clear-button" type="button">清空</button>
         <button class="button button-run" id="run-button" type="button">
           <span class="play-icon" aria-hidden="true"></span>
           运行逻辑
@@ -73,6 +100,7 @@
             <div class="workspace-meta">
               <span id="command-count">0 条指令</span>
               <span class="keyboard-hint">双击积木可删除</span>
+              <button class="icon-button" id="clear-button" type="button" aria-label="清空工作区" title="清空工作区">清空</button>
             </div>
           </div>
 
@@ -98,127 +126,39 @@
             <span>拖到这里删除</span>
           </div>
         </section>
+      </div>
 
+      <aside class="panel answer-panel" aria-labelledby="answer-heading">
+        <div class="panel-heading compact">
+          <div>
+            <p class="section-kicker">ANSWERS</p>
+            <h2 id="answer-heading">回答</h2>
+          </div>
+          <span class="count-badge" id="result-count">0</span>
         </div>
-
-      <aside class="inspector-column">
-        <section class="panel variables-panel" aria-labelledby="variables-heading">
-          <div class="panel-heading compact">
-            <div>
-              <p class="section-kicker">STATE</p>
-              <h2 id="variables-heading">变量状态</h2>
-            </div>
-            <span class="count-badge" id="variable-count">0</span>
-          </div>
-          <div class="variable-list" id="variable-list">
-            <div class="empty-small">
-              <span>$</span>
-              <p>运行赋值指令后，变量会显示在这里。</p>
+        <div class="result-pane">
+          <div class="result-list answer-list" id="answer-list" aria-live="polite">
+            <div class="empty-small answer-empty">
+              <span>?</span>
+              <p>“回答”指令的推理结果会出现在这里。</p>
             </div>
           </div>
-        </section>
-
-        <section class="panel results-panel" aria-labelledby="results-heading">
-          <div class="panel-heading compact">
-            <div>
-              <p class="section-kicker">OUTPUT</p>
-              <h2 id="results-heading">回答 / 控制台</h2>
-            </div>
-            <span class="count-badge" id="result-count">0</span>
-          </div>
-          <div class="result-tabs" role="tablist" aria-label="回答与控制台切换">
-            <button class="result-tab is-active" id="answer-tab" type="button" role="tab" aria-selected="true" aria-controls="answer-pane" data-target="answer">回答</button>
-            <button class="result-tab" id="console-tab" type="button" role="tab" aria-selected="false" aria-controls="console-pane" data-target="console">控制台</button>
-          </div>
-
-          <div class="result-pane" id="answer-pane" role="tabpanel" aria-labelledby="answer-tab">
-            <div class="result-list answer-list" id="answer-list" aria-live="polite">
-              <div class="empty-small answer-empty">
-                <span>?</span>
-                <p>“回答”指令的推理结果会出现在这里。</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="result-pane" id="console-pane" role="tabpanel" aria-labelledby="console-tab" hidden>
-            <div class="console-log" id="console-log" aria-live="polite">
-              <div class="empty-small console-empty">
-                <span>&gt;_</span>
-                <p>运行后，指令执行轨迹、报错与诊断信息会出现在这里。</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="logic-legend" aria-label="四值逻辑图例">
-            <span data-logic="T"><b>T</b> 是</span>
-            <span data-logic="F"><b>F</b> 否</span>
-            <span data-logic="U"><b>U</b> 不确定</span>
-            <span data-logic="I"><b>I</b> 无法回答</span>
-          </div>
-        </section>
+        </div>
+        <div class="logic-legend" aria-label="四值逻辑图例">
+          <span data-logic="T"><b>T</b> 是</span>
+          <span data-logic="F"><b>F</b> 否</span>
+          <span data-logic="U"><b>U</b> 不确定</span>
+          <span data-logic="I"><b>I</b> 无法回答</span>
+        </div>
       </aside>
     </main>
+
+    <nav class="taskbar" id="taskbar" aria-label="已打开窗口"></nav>
   </div>
+
+  <div class="window-host" id="window-host" aria-hidden="false"></div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-  <div class="manual-modal" id="manual-modal" hidden role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
-    <div class="manual-modal-backdrop" data-close></div>
-    <div class="manual-modal-content">
-      <header class="manual-modal-head">
-        <div>
-          <p class="section-kicker">MANUAL</p>
-          <h2 id="manual-modal-title">积木手册</h2>
-        </div>
-        <button class="icon-button" data-close type="button" aria-label="关闭">×</button>
-      </header>
-      <div class="manual-modal-body" id="manual-modal-body"></div>
-    </div>
-  </div>
-
-  <div class="text-modal" id="text-modal" hidden role="dialog" aria-modal="true" aria-labelledby="text-modal-title">
-    <div class="text-modal-backdrop" data-close></div>
-    <div class="text-modal-content">
-      <header class="text-modal-head">
-        <div>
-          <p class="section-kicker">TEXT FORMAT</p>
-          <h2 id="text-modal-title">积木块的文字表示</h2>
-        </div>
-        <button class="icon-button" data-close type="button" aria-label="关闭">×</button>
-      </header>
-      <p class="text-modal-tip">
-        使用 <code>( )</code> 嵌套变量积木、<code>[ ]</code> 声明指令积木、<code>&lt; &gt;</code> 表示六边形判断积木、<code>{ }</code> 声明循环作用域。<br>
-        多工作区模式下，每个工作区以 <code># === Tab N: 名称 ===</code> 分隔；每个 <code>[回答]</code> 后附带 <code># L&lt;n&gt;</code> 标注其在工作区内的行号。
-        示例：<code>[回答 &lt;(从(1)到(6)的随机变量) 大于 (3) 吗?&gt;]  # L1</code>
-      </p>
-      <textarea id="text-input" class="text-input" spellcheck="false" aria-label="文字表示编辑区"></textarea>
-      <div class="text-modal-errors" id="text-errors" aria-live="polite"></div>
-      <footer class="text-modal-foot">
-        <button class="button button-ghost" id="text-copy" type="button">复制到剪贴板</button>
-        <span class="text-modal-spacer"></span>
-        <button class="button button-ghost" data-close type="button">取消</button>
-        <button class="button button-run" id="text-apply" type="button">应用到工作区</button>
-      </footer>
-    </div>
-  </div>
-
-  <div class="tests-modal" id="tests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="tests-modal-title">
-    <div class="tests-modal-backdrop" data-close></div>
-    <div class="tests-modal-content">
-      <header class="tests-modal-head">
-        <div>
-          <p class="section-kicker">CHECKPOINT</p>
-          <h2 id="tests-modal-title">通关检测结果</h2>
-        </div>
-        <button class="icon-button" data-close type="button" aria-label="关闭">×</button>
-      </header>
-      <p class="tests-modal-summary" id="tests-modal-summary"></p>
-      <footer class="tests-modal-foot">
-        <span class="text-modal-spacer"></span>
-        <button class="button button-run" data-close type="button">知道了</button>
-      </footer>
-    </div>
-  </div>
 
   <script src="logic-engine.js"></script>
   <script src="data-bundle.js"></script>

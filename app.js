@@ -17,7 +17,7 @@
       description: "执行六边形里的判断，并把推理结果（T 是 / F 否 / U 不确定 / I 无法回答）追加到回答面板。",
       parts: [
         { kind: "text", text: "回答" },
-        { kind: "slot", name: "predicate", accept: "predicate", placeholder: "判断" }
+        { kind: "slot", name: "predicate", accept: "predicate", placeholder: "问题" }
       ]
     },
     assign: {
@@ -43,11 +43,45 @@
         { kind: "scope", name: "body" }
       ]
     },
+    declareRelation: {
+      type: "declareRelation",
+      category: "command",
+      shape: "command",
+      description: "声明一个关系名，关系名会出现在变量视图的「关系」列表里；游戏自带的「大于/等于/小于/含有」默认已声明，再次声明无副作用。",
+      parts: [
+        { kind: "text", text: "声明" },
+        { kind: "name", placeholder: "关系名" },
+        { kind: "text", text: "关系" }
+      ]
+    },
+    overrideRelation: {
+      type: "overrideRelation",
+      category: "command",
+      shape: "command",
+      description: "把 (左值, 关系名, 右值) 的判断结果强制改为 是/否/不确定/无法回答 之一，可覆写游戏自带的关系，不触发连锁。",
+      parts: [
+        { kind: "text", text: "覆写" },
+        { kind: "slot", name: "left", accept: "value", placeholder: "左值" },
+        { kind: "name", placeholder: "关系名" },
+        { kind: "slot", name: "right", accept: "value", placeholder: "右值" },
+        { kind: "text", text: "为" },
+        {
+          kind: "select",
+          name: "code",
+          options: [
+            { value: "T", label: "是" },
+            { value: "F", label: "否" },
+            { value: "U", label: "不确定" },
+            { value: "I", label: "无法回答" }
+          ]
+        }
+      ]
+    },
     compare: {
       type: "compare",
       category: "predicate",
       shape: "predicate",
-      description: "按 大于 / 等于 / 小于 比较左右两个候选值，得到 T/F/U/I。",
+      description: "按 大于 / 等于 / 小于 / 含有 比较左右两个候选值，得到 T/F/U/I。数值类只接受数值；「等于」兼容同类型；「含有」按子串判断。",
       parts: [
         { kind: "slot", name: "left", accept: "value", placeholder: "左值" },
         {
@@ -56,22 +90,23 @@
           options: [
             { value: "gt", label: "大于" },
             { value: "eq", label: "等于" },
-            { value: "lt", label: "小于" }
+            { value: "lt", label: "小于" },
+            { value: "contains", label: "含有" }
           ]
         },
         { kind: "slot", name: "right", accept: "value", placeholder: "右值" },
         { kind: "text", text: "吗？" }
       ]
     },
-    contains: {
-      type: "contains",
+    relationCheck: {
+      type: "relationCheck",
       category: "predicate",
       shape: "predicate",
-      description: "判断左侧内容是否“字符串意义上”含有右侧目标；数值也会先转成字符串再判断。",
+      description: "查询 (左值, 关系名, 右值) 的关系结果：先看是否被「覆写」，再判断是否与游戏自带的 大于/等于/小于/含有 同名（同名则走内置实现），否则返回 无法回答。",
       parts: [
-        { kind: "slot", name: "left", accept: "value", placeholder: "内容" },
-        { kind: "text", text: "含有" },
-        { kind: "slot", name: "right", accept: "value", placeholder: "目标" },
+        { kind: "slot", name: "left", accept: "value", placeholder: "左值" },
+        { kind: "name", placeholder: "关系名" },
+        { kind: "slot", name: "right", accept: "value", placeholder: "右值" },
         { kind: "text", text: "吗？" }
       ]
     },
@@ -91,7 +126,7 @@
       shape: "value",
       description: "把判断结果转成回答字符串（T→是、F→否、U→不确定、I→无法回答），可作为赋值或比较的输入。",
       parts: [
-        { kind: "slot", name: "predicate", accept: "predicate", placeholder: "判断" },
+        { kind: "slot", name: "predicate", accept: "predicate", placeholder: "问题" },
         { kind: "text", text: "的答案" }
       ]
     },
@@ -101,7 +136,7 @@
       shape: "value",
       description: "返回方框内问题的字数（忽略积木自带的空格、括号与 $）。除 第x问 外的积木不求值，只按文字表示计数；<第x问> 在 0<x<本题编号 时展开该问的字数，x 等于本题编号视作字符串计入，x 大于本题编号、x≤0 或非整数则报错。",
       parts: [
-        { kind: "slot", name: "predicate", accept: "predicate", placeholder: "判断" },
+        { kind: "slot", name: "predicate", accept: "predicate", placeholder: "问题" },
         { kind: "text", text: "的字数" }
       ]
     },
@@ -175,42 +210,290 @@
     commandStack: document.querySelector("#command-stack"),
     emptyWorkspace: document.querySelector("#empty-workspace"),
     commandCount: document.querySelector("#command-count"),
-    variableList: document.querySelector("#variable-list"),
-    variableCount: document.querySelector("#variable-count"),
     resultCount: document.querySelector("#result-count"),
     answerList: document.querySelector("#answer-list"),
-    consoleLog: document.querySelector("#console-log"),
-    answerTab: document.querySelector("#answer-tab"),
-    consoleTab: document.querySelector("#console-tab"),
-    answerPane: document.querySelector("#answer-pane"),
-    consolePane: document.querySelector("#console-pane"),
     runStatus: document.querySelector("#run-status"),
     runButton: document.querySelector("#run-button"),
-    exampleButton: document.querySelector("#example-button"),
     emptyExampleButton: document.querySelector("#empty-example-button"),
     clearButton: document.querySelector("#clear-button"),
     trashZone: document.querySelector("#trash-zone"),
     toast: document.querySelector("#toast"),
-    textButton: document.querySelector("#text-button"),
-    textModal: document.querySelector("#text-modal"),
-    textInput: document.querySelector("#text-input"),
-    textApply: document.querySelector("#text-apply"),
-    textCopy: document.querySelector("#text-copy"),
-    textErrors: document.querySelector("#text-errors"),
-    levelSelect: document.querySelector("#level-select"),
-    levelHint: document.querySelector("#level-hint"),
-    levelProgress: document.querySelector("#level-progress"),
-    manualButton: document.querySelector("#manual-button"),
-    manualModal: document.querySelector("#manual-modal"),
-    manualBody: document.querySelector("#manual-modal-body"),
-    testsEnterButton: document.querySelector("#tests-enter"),
-    testsModal: document.querySelector("#tests-modal"),
-    testsModalTitle: document.querySelector("#tests-modal-title"),
-    testsModalSummary: document.querySelector("#tests-modal-summary"),
-    tabBar: document.querySelector("#tab-bar")
+    tabBar: document.querySelector("#tab-bar"),
+    windowHost: document.querySelector("#window-host"),
+    taskbar: document.querySelector("#taskbar"),
+    menuBar: document.querySelector(".menu-bar")
   };
 
   let activeSlot = null;
+
+  // ===== Window Manager =====
+  // Each window is a positioned <div class="window"> with a header (drag handle),
+  // control buttons, and a body. Windows are tracked by id and rendered into
+  // .window-host. Clicking the taskbar toggles minimize; dragging the header
+  // repositions; bottom-right grip resizes.
+  const windowState = {
+    list: [],          // [{ id, title, icon, windowEl, taskEl, onClose, factory }]
+    zIndex: 100,
+    offsetSeed: 0
+  };
+
+  function clampWindowPosition(windowEl) {
+    const margin = 20;
+    const host = elements.windowHost;
+    if (!host) return;
+    const hostRect = host.getBoundingClientRect();
+    const rect = windowEl.getBoundingClientRect();
+    let nextLeft = parseFloat(windowEl.dataset.left || "0");
+    let nextTop = parseFloat(windowEl.dataset.top || "0");
+    if (nextLeft + rect.width < margin + 80) nextLeft = margin;
+    if (nextTop + rect.height < margin + 80) nextTop = margin;
+    if (nextLeft > hostRect.width - 80) nextLeft = Math.max(margin, hostRect.width - rect.width - margin);
+    if (nextTop > hostRect.height - 80) nextTop = Math.max(margin, hostRect.height - rect.height - margin);
+    windowEl.style.left = `${nextLeft}px`;
+    windowEl.style.top = `${nextTop}px`;
+    windowEl.dataset.left = String(nextLeft);
+    windowEl.dataset.top = String(nextTop);
+  }
+
+  function focusWindow(id) {
+    const entry = windowState.list.find((w) => w.id === id);
+    if (!entry) return;
+    windowState.zIndex += 1;
+    entry.windowEl.style.zIndex = String(windowState.zIndex);
+    windowState.list.forEach((w) => w.windowEl.classList.toggle("is-focused", w.id === id));
+    windowState.list.forEach((w) => w.taskEl?.classList.toggle("is-active", w.id === id));
+    entry.windowEl.classList.remove("is-minimized");
+  }
+
+  function closeWindow(id) {
+    const idx = windowState.list.findIndex((w) => w.id === id);
+    if (idx < 0) return;
+    const entry = windowState.list[idx];
+    if (entry.onClose) {
+      try { entry.onClose(); } catch {}
+    }
+    entry.windowEl.remove();
+    entry.taskEl?.remove();
+    windowState.list.splice(idx, 1);
+  }
+
+  function minimizeWindow(id) {
+    const entry = windowState.list.find((w) => w.id === id);
+    if (!entry) return;
+    entry.windowEl.classList.add("is-minimized");
+    entry.taskEl?.classList.remove("is-active");
+  }
+
+  function maximizeWindow(id) {
+    const entry = windowState.list.find((w) => w.id === id);
+    if (!entry) return;
+    entry.windowEl.classList.toggle("is-maximized");
+  }
+
+  function openWindow({ id, title, icon, width = 480, height = 360, body, onClose, onMount }) {
+    if (!elements.windowHost || !elements.taskbar) return null;
+    const existing = windowState.list.find((w) => w.id === id);
+    if (existing) {
+      focusWindow(id);
+      return existing;
+    }
+
+    const win = document.createElement("div");
+    win.className = "window";
+    win.dataset.windowId = id;
+
+    // Stagger new windows so they don't stack on top of each other.
+    windowState.offsetSeed = (windowState.offsetSeed + 1) % 6;
+    const offset = windowState.offsetSeed * 24;
+    const initialLeft = Math.max(40, (window.innerWidth - width) / 2 + offset - 60);
+    const initialTop = Math.max(60, 80 + offset);
+    win.style.width = `${width}px`;
+    win.style.height = `${height}px`;
+    win.style.left = `${initialLeft}px`;
+    win.style.top = `${initialTop}px`;
+    win.dataset.left = String(initialLeft);
+    win.dataset.top = String(initialTop);
+
+    const header = document.createElement("div");
+    header.className = "window-header";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "window-title";
+    if (icon) {
+      const iconEl = document.createElement("span");
+      iconEl.className = "window-title-icon";
+      iconEl.textContent = icon;
+      titleEl.append(iconEl);
+    }
+    const titleText = document.createElement("span");
+    titleText.className = "window-title-text";
+    titleText.textContent = title || "";
+    titleEl.append(titleText);
+    header.append(titleEl);
+
+    const controls = document.createElement("div");
+    controls.className = "window-controls";
+    const minBtn = document.createElement("button");
+    minBtn.type = "button";
+    minBtn.className = "window-control window-minimize";
+    minBtn.title = "最小化";
+    minBtn.setAttribute("aria-label", "最小化");
+    minBtn.textContent = "—";
+    const maxBtn = document.createElement("button");
+    maxBtn.type = "button";
+    maxBtn.className = "window-control window-maximize";
+    maxBtn.title = "最大化";
+    maxBtn.setAttribute("aria-label", "最大化");
+    maxBtn.textContent = "▢";
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "window-control window-close";
+    closeBtn.title = "关闭";
+    closeBtn.setAttribute("aria-label", "关闭");
+    closeBtn.textContent = "✕";
+    controls.append(minBtn, maxBtn, closeBtn);
+    header.append(controls);
+
+    const bodyWrap = document.createElement("div");
+    bodyWrap.className = "window-body";
+    if (body instanceof Node) bodyWrap.append(body);
+    else if (body) bodyWrap.innerHTML = body;
+
+    const resize = document.createElement("div");
+    resize.className = "window-resize";
+
+    win.append(header, bodyWrap, resize);
+    elements.windowHost.append(win);
+
+    // Taskbar item
+    const task = document.createElement("button");
+    task.type = "button";
+    task.className = "taskbar-item";
+    if (icon) {
+      const taskIcon = document.createElement("span");
+      taskIcon.className = "taskbar-item-icon";
+      taskIcon.textContent = icon;
+      task.append(taskIcon);
+    }
+    const taskLabel = document.createElement("span");
+    taskLabel.className = "taskbar-item-label";
+    taskLabel.textContent = title || "";
+    task.append(taskLabel);
+    elements.taskbar.append(task);
+
+    // Wire interactions
+    const entry = { id, title, icon, windowEl: win, taskEl: task, onClose, factory: onMount };
+    windowState.list.push(entry);
+
+    closeBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeWindow(id);
+    });
+    minBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      minimizeWindow(id);
+    });
+    maxBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      maximizeWindow(id);
+    });
+    task.addEventListener("click", () => {
+      if (win.classList.contains("is-minimized") || !win.classList.contains("is-focused")) {
+        focusWindow(id);
+      } else {
+        minimizeWindow(id);
+      }
+    });
+    win.addEventListener("pointerdown", () => focusWindow(id));
+
+    // Drag from header
+    attachWindowDrag(win, header);
+    // Resize from grip
+    attachWindowResize(win, resize);
+
+    focusWindow(id);
+
+    if (typeof onMount === "function") {
+      try { onMount({ windowEl: win, bodyEl: bodyWrap, taskEl: task }); }
+      catch (err) { console.error("Window mount failed:", err); }
+    }
+
+    clampWindowPosition(win);
+    return entry;
+  }
+
+  function attachWindowDrag(win, handle) {
+    let dragState = null;
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.target.closest(".window-control")) return;
+      if (win.classList.contains("is-maximized")) return;
+      event.preventDefault();
+      const rect = win.getBoundingClientRect();
+      dragState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: rect.left,
+        top: rect.top
+      };
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (!dragState || event.pointerId !== dragState.pointerId) return;
+      const dx = event.clientX - dragState.startX;
+      const dy = event.clientY - dragState.startY;
+      const nextLeft = dragState.left + dx;
+      const nextTop = dragState.top + dy;
+      win.style.left = `${nextLeft}px`;
+      win.style.top = `${nextTop}px`;
+      win.dataset.left = String(nextLeft);
+      win.dataset.top = String(nextTop);
+    });
+    function endDrag(event) {
+      if (!dragState || event.pointerId !== dragState.pointerId) return;
+      try { handle.releasePointerCapture(dragState.pointerId); } catch {}
+      dragState = null;
+      clampWindowPosition(win);
+    }
+    handle.addEventListener("pointerup", endDrag);
+    handle.addEventListener("pointercancel", endDrag);
+  }
+
+  function attachWindowResize(win, grip) {
+    let resizeState = null;
+    grip.addEventListener("pointerdown", (event) => {
+      if (win.classList.contains("is-maximized")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = win.getBoundingClientRect();
+      resizeState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        width: rect.width,
+        height: rect.height
+      };
+      grip.setPointerCapture(event.pointerId);
+      win.classList.add("is-resizing");
+    });
+    grip.addEventListener("pointermove", (event) => {
+      if (!resizeState || event.pointerId !== resizeState.pointerId) return;
+      const dx = event.clientX - resizeState.startX;
+      const dy = event.clientY - resizeState.startY;
+      const nextW = Math.max(280, resizeState.width + dx);
+      const nextH = Math.max(200, resizeState.height + dy);
+      win.style.width = `${nextW}px`;
+      win.style.height = `${nextH}px`;
+    });
+    function endResize(event) {
+      if (!resizeState || event.pointerId !== resizeState.pointerId) return;
+      try { grip.releasePointerCapture(resizeState.pointerId); } catch {}
+      resizeState = null;
+      win.classList.remove("is-resizing");
+    }
+    grip.addEventListener("pointerup", endResize);
+    grip.addEventListener("pointercancel", endResize);
+  }
   let dragState = null;
   let pointerDrag = null;
   let toastTimer = null;
@@ -657,15 +940,9 @@
   }
 
   function emptyVariables() {
-    const empty = document.createElement("div");
-    empty.className = "empty-small";
-    const icon = document.createElement("span");
-    icon.textContent = "$";
-    const copy = document.createElement("p");
-    copy.textContent = "运行赋值指令后，变量会显示在这里。";
-    empty.append(icon, copy);
-    elements.variableList.replaceChildren(empty);
-    elements.variableCount.textContent = "0";
+    // Variables now live in a dedicated window; nothing to clear inline.
+    lastRelations = new Map();
+    lastDeclaredRelations = new Set(["大于", "等于", "小于", "含有"]);
   }
 
   function emptyResults() {
@@ -678,59 +955,136 @@
     answer.append(answerIcon, answerCopy);
     elements.answerList.replaceChildren(answer);
 
-    const consoleEmpty = document.createElement("div");
-    consoleEmpty.className = "empty-small console-empty";
-    const consoleIcon = document.createElement("span");
-    consoleIcon.textContent = ">_";
-    const consoleCopy = document.createElement("p");
-    consoleCopy.textContent = "运行后，指令执行轨迹、报错与诊断信息会出现在这里。";
-    consoleEmpty.append(consoleIcon, consoleCopy);
-    elements.consoleLog.replaceChildren(consoleEmpty);
-
     elements.resultCount.textContent = "0";
   }
 
-  function setActiveTab(target) {
-    const showAnswer = target !== "console";
-    elements.answerTab.classList.toggle("is-active", showAnswer);
-    elements.consoleTab.classList.toggle("is-active", !showAnswer);
-    elements.answerTab.setAttribute("aria-selected", String(showAnswer));
-    elements.consoleTab.setAttribute("aria-selected", String(!showAnswer));
-    elements.answerPane.hidden = !showAnswer;
-    elements.consolePane.hidden = showAnswer;
+  function setActiveTab(_target) {
+    // Console tab was removed; kept as no-op for backwards compatibility.
   }
 
-  function renderVariables(environment) {
-    elements.variableList.replaceChildren();
-    elements.variableCount.textContent = String(environment.size);
+  let lastEnvironment = new Map();
+  let lastRelations = new Map();
+  let lastDeclaredRelations = new Set(["大于", "等于", "小于", "含有"]);
 
-    if (!environment.size) {
-      emptyVariables();
+  function renderVariables(environment, relations = null, declaredRelations = null) {
+    lastEnvironment = environment;
+    if (relations) lastRelations = relations;
+    if (declaredRelations) lastDeclaredRelations = declaredRelations;
+    const existing = windowState.list.find((w) => w.id === "variables");
+    if (existing) {
+      const bodyEl = existing.windowEl.querySelector(".window-body");
+      if (bodyEl) renderVariablesContent(bodyEl, environment, lastRelations, lastDeclaredRelations);
+    }
+  }
+
+  function renderVariablesContent(container, environment, relations = lastRelations, declaredRelations = lastDeclaredRelations) {
+    container.replaceChildren();
+    const hasVars = environment && environment.size;
+    const hasRels = (relations && relations.size) || (declaredRelations && declaredRelations.size);
+    if (!hasVars && !hasRels) {
+      const empty = document.createElement("div");
+      empty.className = "variables-window-empty";
+      const h = document.createElement("h3");
+      h.textContent = "还没有任何变量";
+      const p = document.createElement("p");
+      p.textContent = "运行赋值指令后，变量、关系及其候选值会出现在这里。";
+      empty.append(h, p);
+      container.append(empty);
       return;
     }
+    if (hasVars) {
+      const list = document.createElement("div");
+      list.className = "variables-window-list";
+      for (const [name, result] of environment.entries()) {
+        const row = document.createElement("div");
+        row.className = "variables-window-row";
+        const icon = document.createElement("span");
+        icon.className = "variables-window-icon";
+        icon.textContent = "$";
+        const copy = document.createElement("div");
+        copy.className = "variables-window-copy";
+        const title = document.createElement("strong");
+        title.textContent = name;
+        const summary = document.createElement("small");
+        summary.textContent = engine.summarizeValue(result);
+        copy.append(title, summary);
+        const type = document.createElement("span");
+        type.className = "variables-window-type";
+        type.textContent = result.ok ? engine.TYPE_LABELS[result.type] : "I";
+        row.append(icon, copy, type);
+        list.append(row);
+      }
+      container.append(list);
+    }
 
-    for (const [name, result] of environment.entries()) {
+    if (hasRels) {
+      renderRelationsSection(container, relations, declaredRelations);
+    }
+  }
+
+  function renderRelationsSection(container, relations, declaredRelations) {
+    const heading = document.createElement("h3");
+    heading.className = "relations-window-heading";
+    heading.textContent = "关系";
+    container.append(heading);
+    const list = document.createElement("div");
+    list.className = "variables-window-list";
+    const names = new Set();
+    if (declaredRelations) for (const n of declaredRelations) names.add(n);
+    if (relations) for (const n of relations.keys()) names.add(n);
+    const ordered = Array.from(names).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    for (const name of ordered) {
       const row = document.createElement("div");
-      row.className = "variable-row";
-
+      row.className = "variables-window-row relation-row";
       const icon = document.createElement("span");
-      icon.className = "variable-icon";
-      icon.textContent = "$";
-
+      icon.className = "variables-window-icon";
+      icon.textContent = "≋";
       const copy = document.createElement("div");
-      copy.className = "variable-copy";
+      copy.className = "variables-window-copy";
       const title = document.createElement("strong");
       title.textContent = name;
       const summary = document.createElement("small");
-      summary.textContent = engine.summarizeValue(result);
+      const table = relations && relations.get(name);
+      if (!table || table.size === 0) {
+        summary.textContent = "未覆写任何 (左, 右) 组合";
+      } else {
+        const lines = [];
+        for (const [lk, inner] of table.entries()) {
+          for (const [rk, code] of inner.entries()) {
+            lines.push(`${displayRelationValue(lk)}  ${name}  ${displayRelationValue(rk)}  →  ${code}`);
+          }
+        }
+        const shown = lines.slice(0, 6).join("；");
+        summary.textContent = `${shown}${lines.length > 6 ? ` …（共 ${lines.length} 条）` : ""}`;
+      }
       copy.append(title, summary);
-
       const type = document.createElement("span");
-      type.className = "type-chip";
-      type.textContent = result.ok ? engine.TYPE_LABELS[result.type] : "I";
+      type.className = "variables-window-type";
+      type.textContent = "R";
       row.append(icon, copy, type);
-      elements.variableList.append(row);
+      list.append(row);
     }
+    container.append(list);
+  }
+
+  function displayRelationValue(rawKey) {
+    if (rawKey == null) return "";
+    const str = String(rawKey);
+    if (str.startsWith("string:")) return str.slice("string:".length);
+    if (str.startsWith("number:")) return str.slice("number:".length);
+    if (str.startsWith("boolean:")) return str.slice("boolean:".length);
+    return str;
+  }
+
+  function openVariablesWindow() {
+    openWindow({
+      id: "variables",
+      title: "查看变量",
+      icon: "$",
+      width: 460,
+      height: 380,
+      onMount: ({ bodyEl }) => renderVariablesContent(bodyEl, lastEnvironment)
+    });
   }
 
   function makeResultCard(code, title) {
@@ -752,72 +1106,18 @@
     return card;
   }
 
-  function makeConsoleEntry(level, title, detail) {
-    const entry = document.createElement("article");
-    entry.className = `console-entry console-${level}`;
-    const head = document.createElement("div");
-    head.className = "console-head";
-    const tag = document.createElement("span");
-    tag.className = "console-tag";
-    tag.textContent = level === "error" ? "ERR" : level === "warn" ? "WRN" : "LOG";
-    const heading = document.createElement("span");
-    heading.className = "console-title";
-    heading.textContent = title;
-    head.append(tag, heading);
-    entry.append(head);
-    if (detail) {
-      const body = document.createElement("p");
-      body.className = "console-detail";
-      body.textContent = detail;
-      entry.append(body);
-    }
-    return entry;
-  }
-
   function renderResults(execution) {
     const answerCards = [];
-    const consoleEntries = [];
 
     for (const step of execution.steps) {
       const lineLabel = `第${step.line}行`;
       if (step.type === "answer") {
         const title = `${lineLabel} · 第${step.question}问 · ${step.result.label}`;
         answerCards.push(makeResultCard(step.result.code, title));
-        consoleEntries.push(makeConsoleEntry(
-          step.result.code === "I" ? "error" : "info",
-          title,
-          step.result.detail
-        ));
       }
-      if (step.type === "assign" && !step.result.ok) {
-        consoleEntries.push(makeConsoleEntry(
-          "error",
-          `${lineLabel} · 赋值无法完成`,
-          step.result.error
-        ));
-      }
-      if (step.type === "repeat" && step.result?.code === "I") {
-        consoleEntries.push(makeConsoleEntry(
-          "error",
-          `${lineLabel} · ${step.result.label}`,
-          step.result.detail
-        ));
-      }
-      if (step.type === "unknown") {
-        consoleEntries.push(makeConsoleEntry(
-          "error",
-          `${lineLabel} · 指令无法执行`,
-          step.result.error
-        ));
-      }
-    }
-
-    if (!consoleEntries.length) {
-      consoleEntries.push(makeConsoleEntry("info", "就绪", "尚未运行逻辑，点击“运行逻辑”查看执行轨迹。"));
     }
 
     elements.answerList.replaceChildren(...(answerCards.length ? answerCards : [makeEmptyAnswer()]));
-    elements.consoleLog.replaceChildren(...consoleEntries);
     elements.resultCount.textContent = String(answerCards.length);
 
     if (!answerCards.length) {
@@ -913,59 +1213,118 @@
     return sections;
   }
 
-  function renderTextErrors(message) {
-    elements.textErrors.replaceChildren();
+  let textWindowRefs = null; // { applyBtn, copyBtn, inputEl, errorEl, winEntry }
+
+  function renderTextErrors(errorEl, message) {
+    errorEl.replaceChildren();
     if (!message) return;
     const error = document.createElement("div");
     error.className = "text-modal-error";
     error.textContent = message;
-    elements.textErrors.append(error);
+    errorEl.append(error);
   }
 
-  function openTextModal() {
-    elements.textInput.value = programToText();
-    renderTextErrors("");
-    elements.textModal.hidden = false;
-    window.setTimeout(() => {
-      elements.textInput.focus();
-      elements.textInput.setSelectionRange(0, 0);
-      elements.textInput.scrollTop = 0;
-    }, 0);
+  function buildTextWindowBody() {
+    const root = document.createElement("div");
+    root.className = "text-window-root";
+
+    const tip = document.createElement("p");
+    tip.className = "text-modal-tip";
+    tip.textContent = "用文本方式查看 / 替换当前工作区。支持多个工作区，使用 “# === Tab N: 名称 ===” 作为分节。";
+    root.append(tip);
+
+    const textarea = document.createElement("textarea");
+    textarea.id = "text-window-input";
+    textarea.className = "text-window-textarea";
+    textarea.spellcheck = false;
+    root.append(textarea);
+
+    const errorBox = document.createElement("div");
+    errorBox.className = "text-window-errors";
+    root.append(errorBox);
+
+    const actions = document.createElement("div");
+    actions.className = "text-window-actions";
+    const applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.className = "button button-ghost";
+    applyBtn.textContent = "应用到工作区";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "button button-ghost";
+    copyBtn.textContent = "复制文本";
+    actions.append(applyBtn, copyBtn);
+    root.append(actions);
+
+    return { root, textarea, errorBox, applyBtn, copyBtn };
   }
 
-  function closeTextModal() {
-    elements.textModal.hidden = true;
+  function openTextWindow() {
+    const entry = openWindow({
+      id: "text",
+      title: "导入 / 导出",
+      icon: "文",
+      width: 560,
+      height: 460,
+      onMount: ({ windowEl, bodyEl }) => {
+        bodyEl.classList.add("window-body--padded");
+        bodyEl.innerHTML = "";
+        const { root, textarea, errorBox, applyBtn, copyBtn } = buildTextWindowBody();
+        bodyEl.append(root);
+        textarea.value = programToText();
+        textWindowRefs = {
+          applyBtn,
+          copyBtn,
+          inputEl: textarea,
+          errorEl: errorBox,
+          winEntry: windowState.list.find((w) => w.windowEl === windowEl)
+        };
+        applyBtn.addEventListener("click", () => applyTextProgram());
+        copyBtn.addEventListener("click", () => copyTextProgram());
+        textarea.addEventListener("keydown", (event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+            event.preventDefault();
+            applyTextProgram();
+          }
+        });
+        window.setTimeout(() => {
+          textarea.focus();
+          textarea.setSelectionRange(0, 0);
+          textarea.scrollTop = 0;
+        }, 0);
+      }
+    });
+    return entry;
   }
 
   function applyTextProgram() {
+    if (!textWindowRefs) return;
     if (testMode) {
       showToast("通关检测模式下不可改写工作区");
       return;
     }
-    const rawText = elements.textInput.value;
+    const rawText = textWindowRefs.inputEl.value;
     if (!rawText.trim()) {
       assignCommands([]);
       activeSlot = null;
       renderWorkspace();
       clearExecution();
-      closeTextModal();
+      closeWindow("text");
       showToast("已清空工作区");
       return;
     }
     try {
       const sections = parseTabSections(stripLineTags(rawText));
       if (sections.length <= 1 && tabs.length <= 1) {
-        // 单一工作区 + 单一区段：直接覆盖当前工作区。
         const program = engine.parse(stripLineTags(rawText));
         assignCommands(program);
         activeSlot = null;
         renderWorkspace();
         clearExecution();
-        closeTextModal();
+        closeWindow("text");
         showToast(`已导入 ${program.length} 条指令`);
         return;
       }
-      // 多工作区模式：按区段分发到对应 tab。
       let updated = 0;
       let firstError = null;
       const sectionByIndex = new Map();
@@ -990,22 +1349,23 @@
         }
       }
       if (firstError) {
-        renderTextErrors(firstError);
+        renderTextErrors(textWindowRefs.errorEl, firstError);
         return;
       }
       loadActiveTab();
       activeSlot = null;
       renderWorkspace();
       clearExecution();
-      closeTextModal();
+      closeWindow("text");
       showToast(`已更新 ${updated} 个工作区`);
     } catch (error) {
-      renderTextErrors(`解析失败：${error.message}`);
+      renderTextErrors(textWindowRefs.errorEl, `解析失败：${error.message}`);
     }
   }
 
   async function copyTextProgram() {
-    const text = elements.textInput.value;
+    if (!textWindowRefs) return;
+    const text = textWindowRefs.inputEl.value;
     if (!text) {
       showToast("暂无可复制的文字");
       return;
@@ -1014,8 +1374,8 @@
       await navigator.clipboard.writeText(text);
       showToast("已复制到剪贴板");
     } catch {
-      elements.textInput.focus();
-      elements.textInput.select();
+      textWindowRefs.inputEl.focus();
+      textWindowRefs.inputEl.select();
       try {
         document.execCommand("copy");
         showToast("已复制到剪贴板");
@@ -1033,9 +1393,9 @@
 
     setStatus("idle", "正在推理");
     const level = levelsData.levels.find((entry) => entry.id === currentLevelId);
-    const condition = level ? engine.buildCondition(level.condition) : null;
-    const execution = engine.execute(commands, condition ? { condition } : undefined);
-    renderVariables(execution.environment);
+    const runtime = level ? engine.buildCondition(level.condition) : null;
+    const execution = engine.execute(commands, runtime ? { runtime } : undefined);
+    renderVariables(execution.environment, execution.relations, execution.declaredRelations);
     renderResults(execution);
 
     const hasError = execution.steps.some((step) =>
@@ -1047,7 +1407,6 @@
   function clearExecution() {
     emptyVariables();
     emptyResults();
-    setActiveTab("answer");
     setStatus("idle", "等待运行");
   }
 
@@ -1364,7 +1723,8 @@
     assignChance.name = "点数";
     assignChance.slots.value = chance;
 
-    const membership = createNode("contains");
+    const membership = createNode("compare");
+    membership.operator = "contains";
     membership.slots.left = atom("$点数");
     membership.slots.right = atom("2");
     const answerMembership = createNode("answer");
@@ -1400,7 +1760,8 @@
     const assignText = createNode("assign");
     assignText.name = "问候";
     assignText.slots.value = atom('"逻辑工坊"');
-    const textContains = createNode("contains");
+    const textContains = createNode("compare");
+    textContains.operator = "contains";
     textContains.slots.left = atom("$问候");
     textContains.slots.right = atom('"工坊"');
     const answerText = createNode("answer");
@@ -1415,7 +1776,8 @@
     const loopAnswer = createNode("answer");
     loopAnswer.slots.predicate = loopCompare;
     const loopAnswerSix = createNode("answer");
-    const loopContains = createNode("contains");
+    const loopContains = createNode("compare");
+    loopContains.operator = "contains";
     loopContains.slots.left = atom("$点数");
     loopContains.slots.right = atom("6");
     loopAnswerSix.slots.predicate = loopContains;
@@ -1574,27 +1936,11 @@
   document.addEventListener("pointerup", finishPointerDrag);
   document.addEventListener("pointercancel", finishPointerDrag);
 
-  elements.answerTab.addEventListener("click", () => setActiveTab("answer"));
-  elements.consoleTab.addEventListener("click", () => setActiveTab("console"));
-
   elements.runButton.addEventListener("click", () => {
     if (testMode) submitAllAndExit();
     else runWorkspace();
   });
-  elements.exampleButton.addEventListener("click", loadExample);
   elements.emptyExampleButton.addEventListener("click", loadExample);
-  elements.textButton.addEventListener("click", openTextModal);
-  elements.textApply.addEventListener("click", applyTextProgram);
-  elements.textCopy.addEventListener("click", copyTextProgram);
-  elements.textModal.addEventListener("click", (event) => {
-    if (event.target.closest("[data-close]")) closeTextModal();
-  });
-  elements.textInput.addEventListener("keydown", (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-      event.preventDefault();
-      applyTextProgram();
-    }
-  });
   elements.clearButton.addEventListener("click", () => {
     if (!commands.length) {
       showToast("工作区已经是空的");
@@ -1609,19 +1955,11 @@
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      if (!elements.textModal.hidden) {
-        closeTextModal();
-        return;
-      }
-      if (elements.manualModal && !elements.manualModal.hidden) {
-        closeManual();
-        return;
-      }
       activeSlot = null;
       document.querySelectorAll(".slot.is-selected").forEach((slot) => slot.classList.remove("is-selected"));
       cleanupDrag();
     }
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && elements.textModal.hidden) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       runWorkspace();
     }
   });
@@ -1937,34 +2275,68 @@
   }
 
   function renderLevelSelector() {
-    const select = elements.levelSelect;
-    select.replaceChildren();
+    const existing = windowState.list.find((w) => w.id === "level-picker");
+    if (existing) {
+      const bodyEl = existing.windowEl.querySelector(".window-body");
+      if (bodyEl) renderLevelPickerContent(bodyEl);
+    }
+  }
+
+  function renderLevelPickerContent(container) {
+    container.replaceChildren();
+    const intro = document.createElement("p");
+    intro.className = "text-modal-tip";
+    intro.textContent = "选择一关后，工作区会自动载入该关的示例程序。已通关的关会标注 ✓。";
+    container.append(intro);
+
+    const list = document.createElement("div");
+    list.className = "level-picker-list";
     levelsData.levels.forEach((level, index) => {
-      const option = document.createElement("option");
-      option.value = level.id;
+      const row = document.createElement("div");
+      row.className = "level-picker-row";
+      if (level.id === currentLevelId) row.classList.add("is-current");
+      const idx = document.createElement("div");
+      idx.className = "level-picker-index";
+      idx.textContent = String(index + 1).padStart(2, "0");
+      const body = document.createElement("div");
+      body.className = "level-picker-body";
+      const title = document.createElement("div");
+      title.className = "level-picker-title";
       const passed = levelProgress[level.id];
-      option.textContent = `${index + 1}. ${level.title}${passed ? "  ✓" : ""}`;
-      if (level.id === currentLevelId) option.selected = true;
-      select.append(option);
+      title.textContent = `${level.title}${passed ? "  ✓" : ""}`;
+      const desc = document.createElement("div");
+      desc.className = "level-picker-desc";
+      desc.textContent = level.hint || "暂无提示";
+      body.append(title, desc);
+      row.append(idx, body);
+      row.addEventListener("click", () => {
+        selectLevel(level.id);
+        renderLevelPickerContent(container);
+      });
+      list.append(row);
+    });
+    container.append(list);
+  }
+
+  function openLevelPickerWindow() {
+    openWindow({
+      id: "level-picker",
+      title: "选择关卡",
+      icon: "#",
+      width: 480,
+      height: 420,
+      onMount: ({ bodyEl }) => renderLevelPickerContent(bodyEl)
     });
   }
 
   function updateLevelProgressBadge() {
-    if (!currentLevelId) {
-      elements.levelProgress.hidden = true;
-      return;
-    }
-    const passed = levelProgress[currentLevelId];
-    elements.levelProgress.hidden = false;
-    elements.levelProgress.textContent = passed ? "已通关" : "未通关";
-    elements.levelProgress.dataset.state = passed ? "passed" : "locked";
+    // Progress badge moved into the level picker window; no-op here.
   }
 
   function selectLevel(id) {
     const level = levelsData.levels.find((entry) => entry.id === id);
     if (!level) return;
     currentLevelId = id;
-    elements.levelHint.textContent = level.hint || "";
 
     const demoSource = (level.demoProgram || []).join("\n");
     try {
@@ -1978,7 +2350,6 @@
     renderWorkspace();
     clearExecution();
     renderLevelSelector();
-    updateLevelProgressBadge();
   }
 
   function makeChoiceGroup(current, onSelect) {
@@ -2092,10 +2463,6 @@
     testMode = true;
     renderWorkspace();
     setWorkspaceMutatorsEnabled(false);
-    if (elements.testsEnterButton) {
-      elements.testsEnterButton.textContent = "退出通关检测";
-      elements.testsEnterButton.classList.add("is-active");
-    }
     setStatus("idle", "等待作答");
   }
 
@@ -2107,18 +2474,12 @@
     commandsBeforeTest = null;
     renderWorkspace();
     setWorkspaceMutatorsEnabled(true);
-    if (elements.testsEnterButton) {
-      elements.testsEnterButton.textContent = "进入通关检测";
-      elements.testsEnterButton.classList.remove("is-active");
-    }
     clearExecution();
   }
 
   function setWorkspaceMutatorsEnabled(enabled) {
     const buttons = [
-      elements.exampleButton,
       elements.emptyExampleButton,
-      elements.textButton,
       elements.clearButton
     ].filter(Boolean);
     buttons.forEach((btn) => {
@@ -2222,18 +2583,26 @@
   }
 
   function openManual() {
-    renderManualContent(elements.manualBody, manualText);
-    elements.manualModal.hidden = false;
-  }
-
-  function closeManual() {
-    elements.manualModal.hidden = true;
+    openWindow({
+      id: "manual",
+      title: "积木手册",
+      icon: "?",
+      width: 720,
+      height: 560,
+      onMount: ({ bodyEl }) => {
+        bodyEl.classList.add("window-body--padded");
+        const inner = document.createElement("div");
+        inner.className = "manual-modal-body";
+        renderManualContent(inner, manualText);
+        bodyEl.append(inner);
+      }
+    });
   }
 
   function evaluateAllTests() {
     const level = currentLevel();
     if (!level) return null;
-    const conditionFn = engine.buildCondition(level.condition);
+    const runtime = engine.buildCondition(level.condition);
     const rows = [];
     let allCorrect = false;
     let missingAny = false;
@@ -2251,7 +2620,7 @@
       rows.push({ testIndex: 0, test, predictions: [], actuals: [], error: error.message });
       return { level, rows, allCorrect: false, missingAny: true };
     }
-    const execution = engine.execute(parsedTest, conditionFn ? { condition: conditionFn } : undefined);
+    const execution = engine.execute(parsedTest, runtime ? { runtime } : undefined);
     const actuals = execution.outputs.map((output) => output.result.code);
     const predictions = (testPredictionsByLevel[level.id] &&
       testPredictionsByLevel[level.id][test.id]) || [];
@@ -2286,16 +2655,13 @@
   function showTestsModal(evaluation) {
     const { level, allCorrect, missingAny } = evaluation;
 
-    elements.testsModalTitle.textContent = allCorrect
-      ? `恭喜通关「${level.title}」`
-      : "未完全通过，再检查一下";
-    elements.testsModalSummary.dataset.state = allCorrect ? "passed" : "failed";
+    let summaryText = "";
     if (allCorrect) {
-      elements.testsModalSummary.textContent = `本轮随机题已全部命中，可继续挑战下一关。`;
+      summaryText = `本轮随机题已全部命中，可继续挑战下一关。`;
     } else if (missingAny) {
-      elements.testsModalSummary.textContent = `还有未作答的题目，请回到工作区补全预测。`;
+      summaryText = `还有未作答的题目，请回到工作区补全预测。`;
     } else {
-      elements.testsModalSummary.textContent = `本轮预测未全部命中，请回到工作区继续作答。`;
+      summaryText = `本轮预测未全部命中，请回到工作区继续作答。`;
     }
 
     if (allCorrect) {
@@ -2308,11 +2674,49 @@
       updateLevelProgressBadge();
     }
 
-    elements.testsModal.hidden = false;
+    const title = allCorrect ? `恭喜通关「${level.title}」` : "未完全通过，再检查一下";
+    const summaryState = allCorrect ? "passed" : "failed";
+
+    openWindow({
+      id: "checkpoint",
+      title,
+      icon: "✓",
+      width: 460,
+      height: 280,
+      onMount: ({ bodyEl }) => {
+        bodyEl.classList.add("window-body--padded");
+        const head = document.createElement("div");
+        head.className = "tests-modal-head";
+        head.style.padding = "0 0 12px";
+        head.style.borderBottom = "1px solid var(--soft-line)";
+        const titleEl = document.createElement("h2");
+        titleEl.textContent = title;
+        titleEl.style.margin = "0";
+        head.append(titleEl);
+        const summary = document.createElement("p");
+        summary.className = "tests-modal-summary";
+        summary.dataset.state = summaryState;
+        summary.textContent = summaryText;
+        summary.style.margin = "18px 0";
+        const actions = document.createElement("div");
+        actions.className = "tests-modal-foot";
+        actions.style.padding = "0";
+        actions.style.borderTop = "1px solid var(--soft-line)";
+        const spacer = document.createElement("div");
+        spacer.className = "text-modal-spacer";
+        const closeBtn = document.createElement("button");
+        closeBtn.type = "button";
+        closeBtn.className = "button button-ghost";
+        closeBtn.textContent = "关闭";
+        closeBtn.addEventListener("click", () => closeWindow("checkpoint"));
+        actions.append(spacer, closeBtn);
+        bodyEl.append(head, summary, actions);
+      }
+    });
   }
 
   function hideTestsModal() {
-    elements.testsModal.hidden = true;
+    closeWindow("checkpoint");
   }
 
   function submitAllAndExit() {
@@ -2324,20 +2728,171 @@
     }
   }
 
-  elements.manualButton?.addEventListener("click", openManual);
-  elements.manualModal?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-close]")) closeManual();
-  });
-  elements.testsEnterButton?.addEventListener("click", () => {
-    if (testMode) exitTestMode();
-    else enterTestMode();
-  });
-  elements.testsModal?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-close]")) hideTestsModal();
-  });
-  elements.levelSelect?.addEventListener("change", (event) => {
-    selectLevel(event.target.value);
-  });
+  // manualButton has been moved into the Help menu; openManual is wired by menu.
+
+  // ===== Menu bar wiring =====
+  function openMenu(menuEl) {
+    document.querySelectorAll(".menu-item").forEach((item) => {
+      if (item !== menuEl) closeMenu(item);
+    });
+    menuEl.classList.add("is-open");
+    const trigger = menuEl.querySelector(".menu-trigger");
+    trigger?.classList.add("is-active");
+    trigger?.setAttribute("aria-expanded", "true");
+    menuEl.querySelectorAll(".menu-dropdown").forEach((dd) => {
+      dd.hidden = false;
+    });
+  }
+
+  function closeMenu(menuEl) {
+    if (!menuEl) return;
+    menuEl.classList.remove("is-open");
+    const trigger = menuEl.querySelector(".menu-trigger");
+    trigger?.classList.remove("is-active");
+    trigger?.setAttribute("aria-expanded", "false");
+    menuEl.querySelectorAll(".menu-dropdown").forEach((dd) => {
+      dd.hidden = true;
+    });
+  }
+
+  function closeAllMenus() {
+    document.querySelectorAll(".menu-item").forEach(closeMenu);
+  }
+
+  function dispatchMenuClick(target) {
+    const windowKey = target.dataset.window;
+    const actionKey = target.dataset.action;
+    if (windowKey) {
+      const handler = MENU_WINDOW_HANDLERS[windowKey];
+      if (handler) handler();
+    } else if (actionKey) {
+      const handler = MENU_ACTION_HANDLERS[actionKey];
+      if (handler) handler();
+    }
+  }
+
+  const MENU_WINDOW_HANDLERS = {
+    "level-picker": openLevelPickerWindow,
+    "level-hint": openLevelHintWindow,
+    "checkpoint": enterTestMode,
+    "level-editor": openLevelEditorWindow,
+    "text-format": openTextWindow,
+    "variables": openVariablesWindow,
+    "manual": openManual,
+    "extensions-placeholder": () => showToast("扩展功能稍后开放")
+  };
+
+  const MENU_ACTION_HANDLERS = {
+    "load-example": () => {
+      closeAllMenus();
+      loadExample();
+    }
+  };
+
+  function initMenuBar() {
+    const items = document.querySelectorAll(".menu-item");
+    items.forEach((menuEl) => {
+      const trigger = menuEl.querySelector(".menu-trigger");
+      trigger?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (menuEl.classList.contains("is-open")) {
+          closeMenu(menuEl);
+        } else {
+          openMenu(menuEl);
+        }
+      });
+    });
+
+    // Submenu hovers: show sub-dropdowns on hover, close siblings
+    document.querySelectorAll(".menu-submenu").forEach((subEl) => {
+      const subTrigger = subEl.querySelector("button");
+      const subDropdown = subEl.querySelector(".menu-dropdown-sub");
+      subTrigger?.addEventListener("mouseenter", () => {
+        subEl.parentElement.querySelectorAll(".menu-submenu").forEach((other) => {
+          if (other !== subEl) other.querySelector(".menu-dropdown-sub").hidden = true;
+        });
+        if (subDropdown) subDropdown.hidden = false;
+      });
+      subEl.addEventListener("mouseleave", () => {
+        if (subDropdown) subDropdown.hidden = true;
+      });
+    });
+
+    document.querySelectorAll(".menu-dropdown button[data-window], .menu-dropdown button[data-action]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        dispatchMenuClick(btn);
+        closeAllMenus();
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".menu-item")) closeAllMenus();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeAllMenus();
+    });
+  }
+
+  function openLevelHintWindow() {
+    const level = levelsData.levels.find((entry) => entry.id === currentLevelId);
+    if (!level) {
+      showToast("请先选择关卡");
+      openLevelPickerWindow();
+      return;
+    }
+    openWindow({
+      id: "level-hint",
+      title: `关卡提示 · ${level.title}`,
+      icon: "i",
+      width: 480,
+      height: 320,
+      onMount: ({ bodyEl }) => {
+        bodyEl.classList.add("window-body--padded");
+        const wrap = document.createElement("div");
+        wrap.style.padding = "8px 4px 4px";
+        wrap.style.lineHeight = "1.7";
+        wrap.style.color = "var(--ink)";
+        wrap.style.fontSize = "13px";
+        const hint = document.createElement("p");
+        hint.textContent = level.hint || "本关暂无提示。";
+        wrap.append(hint);
+        if (Array.isArray(level.tests) && level.tests.length) {
+          const meta = document.createElement("p");
+          meta.style.color = "var(--muted)";
+          meta.style.fontSize = "11px";
+          meta.style.marginTop = "12px";
+          meta.textContent = `本关有 ${level.tests.length} 道通关预测题。`;
+          wrap.append(meta);
+        }
+        bodyEl.append(wrap);
+      }
+    });
+  }
+
+  // Stub: level editor embeds the standalone page in an iframe.
+  function openLevelEditorWindow() {
+    openWindow({
+      id: "level-editor",
+      title: "关卡编辑器",
+      icon: "E",
+      width: 880,
+      height: 620,
+      onMount: ({ bodyEl }) => {
+        bodyEl.classList.add("window-body--padded");
+        bodyEl.style.padding = "0";
+        const frame = document.createElement("iframe");
+        frame.src = "level-editor.html";
+        frame.title = "关卡编辑器";
+        frame.style.width = "100%";
+        frame.style.height = "100%";
+        frame.style.border = "0";
+        frame.style.background = "var(--canvas)";
+        bodyEl.append(frame);
+      }
+    });
+  }
 
   async function bootstrapGame() {
     loadStoredProgress();
@@ -2358,5 +2913,6 @@
   renderWorkspace();
   emptyVariables();
   emptyResults();
+  initMenuBar();
   bootstrapGame();
 })();

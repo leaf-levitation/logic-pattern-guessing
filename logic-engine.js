@@ -121,12 +121,26 @@
   }
 
   function evaluateInput(input, environment = new Map(), context = null) {
+    let result;
     if (typeof input === "string" || typeof input === "number" || typeof input === "boolean") {
-      return parseAtom(String(input), environment);
+      result = parseAtom(String(input), environment);
+    } else if (!input) {
+      result = valueError("积木孔位尚未填写");
+    } else if (input.kind === "atom") {
+      result = parseAtom(input.value, environment);
+    } else {
+      result = evaluateExpression(input, environment, context);
     }
-    if (!input) return valueError("积木孔位尚未填写");
-    if (input.kind === "atom") return parseAtom(input.value, environment);
-    return evaluateExpression(input, environment, context);
+
+    if (context?.runtime?.transformValue) {
+      try {
+        const transformed = context.runtime.transformValue(result, input, environment, context);
+        if (transformed) result = transformed;
+      } catch (err) {
+        return valueError(err?.message || "值变换失败");
+      }
+    }
+    return result;
   }
 
   function numericType(left, right, operator) {
@@ -235,6 +249,13 @@
     if (!right.ok) return logicError(right.error);
 
     const operator = node.operator || "gt";
+    const name = operatorName(operator);
+
+    // 1) 先查运行时知识库覆写
+    const override = lookupRelationOverride(context, name, left, right);
+    if (override) return override;
+
+    // 2) 内置实现
     if (operator === "eq") {
       const numericPair = isNumeric(left) && isNumeric(right);
       if (numericPair) {
@@ -242,6 +263,10 @@
       }
       if (left.type !== right.type) return logicError("等于判断的两侧类型不兼容");
       return relationResult(left, right, (a, b) => a === b, "候选组合");
+    }
+
+    if (operator === "contains") {
+      return relationResult(left, right, (a, b) => String(a).includes(String(b)), "子串组合");
     }
 
     if (!isNumeric(left) || !isNumeric(right)) {
@@ -256,13 +281,49 @@
     );
   }
 
-  function contains(node, environment, context = null) {
+  function relationCheck(node, environment, context = null) {
     const left = evaluateInput(node.slots?.left, environment, context);
     if (!left.ok) return logicError(left.error);
     const right = evaluateInput(node.slots?.right, environment, context);
     if (!right.ok) return logicError(right.error);
+    const name = node.name || "";
+    const override = lookupRelationOverride(context, name, left, right);
+    if (override) return override;
+    // 内置关系名回退
+    const op = nameToOperator(name);
+    if (op) {
+      return compare({ ...node, operator: op, slots: node.slots }, environment, context);
+    }
+    return logic("I", `未声明的关系 ${name}`, null);
+  }
 
-    return relationResult(left, right, (a, b) => String(a).includes(String(b)), "子串组合");
+  function lookupRelationOverride(context, name, left, right) {
+    if (!name || !context || !context.runtime) return null;
+    const relations = context.runtime.relations;
+    if (!relations) return null;
+    const map = relations.get(name);
+    if (!map) return null;
+    for (const lv of left.values) {
+      const lk = valueKey(lv);
+      const inner = map.get(lk);
+      if (!inner) return null;
+      for (const rv of right.values) {
+        const rk = valueKey(rv);
+        if (inner.has(rk)) return logic(inner.get(rk), `关系 ${name} 被覆写`, null);
+      }
+    }
+    return null;
+  }
+
+  const OPERATOR_TO_NAME = { gt: "大于", eq: "等于", lt: "小于", contains: "含有" };
+  const NAME_TO_OPERATOR = { "大于": "gt", "等于": "eq", "小于": "lt", "含有": "contains" };
+
+  function operatorName(operator) {
+    return OPERATOR_TO_NAME[operator] || null;
+  }
+
+  function nameToOperator(name) {
+    return NAME_TO_OPERATOR[name] || null;
   }
 
   function negate(result) {
@@ -275,14 +336,14 @@
     if (!node) return logicError("六边形孔位中缺少判断积木");
     let result;
     if (node.type === "compare") result = compare(node, environment, context);
-    else if (node.type === "contains") result = contains(node, environment, context);
     else if (node.type === "not") result = negate(evaluatePredicate(node.slots?.predicate, environment, context));
     else if (node.type === "isQuestion") result = isQuestion(node, environment, context);
+    else if (node.type === "relationCheck") result = relationCheck(node, environment, context);
     else return logicError("该积木不能作为判断条件");
 
-    if (context && typeof context.condition === "function") {
+    if (context && context.runtime && typeof context.runtime.transformPredicateResult === "function") {
       try {
-        result = context.condition(result, node, context);
+        result = context.runtime.transformPredicateResult(result, node, context);
       } catch (err) {
         return logicError(err?.message || "关卡条件变换失败");
       }
@@ -298,36 +359,468 @@
   }
 
   function buildCondition(spec) {
-    if (!spec || spec === "truth") return null;
-    if (spec === "alwaysLie") {
-      return (result) => negateTandF(result);
-    }
-    if (spec === "lieIfLong") {
-      return (result, node, context) => {
-        if (!node) return result;
-        const text = charCountText(node, context || {});
-        if (countChars(text) >= 10) return negateTandF(result);
-        return result;
-      };
-    }
-    if (spec === "lieIfOddLine") {
-      return (result, node, context) => {
-        const line = Number(context && context.line);
-        if (Number.isFinite(line) && Math.abs(line) % 2 === 1) return negateTandF(result);
-        return result;
-      };
-    }
-    if (spec === "isAnswerIs") {
-      return (result, node, context) => {
-        if (!node) return result;
-        const text = charCountText(node, context || {});
-        if (text.includes("是")) {
-          return { ...result, code: "T", label: LOGIC_LABELS.T };
+    if (!spec) return null;
+    if (typeof spec === "string") {
+      if (spec === "truth") return null;
+      if (spec === "alwaysLie") {
+        return { transformPredicateResult: (result) => negateTandF(result) };
+      }
+      if (spec === "lieIfLong") {
+        return {
+          transformPredicateResult: (result, node, context) => {
+            if (!node) return result;
+            const text = charCountText(node, context || {});
+            if (countChars(text) >= 10) return negateTandF(result);
+            return result;
+          }
+        };
+      }
+      if (spec === "lieIfOddLine") {
+        return {
+          transformPredicateResult: (result, _node, context) => {
+            const line = Number(context && context.line);
+            if (Number.isFinite(line) && Math.abs(line) % 2 === 1) return negateTandF(result);
+            return result;
+          }
+        };
+      }
+      if (spec === "isAnswerIs" || spec === "answerByPriority") {
+      return {
+        transformPredicateResult: (result, node, context) => {
+          if (!node) return result;
+          const text = charCountText(node, context || {});
+          if (text.includes("是")) return { ...result, code: "T", label: LOGIC_LABELS.T };
+          if (text.includes("否")) return { ...result, code: "F", label: LOGIC_LABELS.F };
+          if (text.includes("不确定")) return { ...result, code: "U", label: LOGIC_LABELS.U };
+          if (text.includes("无法回答")) return { ...result, code: "I", label: LOGIC_LABELS.I };
+          return result;
         }
-        return result;
+      };
+    }
+    if (spec === "allNumbersTo1") {
+      return {
+        transformValue: (domain) => {
+          if (!domain || !domain.ok) return domain;
+          if (domain.type !== "int" && domain.type !== "float") return domain;
+          return { ...domain, values: [1], source: "allNumbersTo1" };
+        }
+      };
+    }
+    if (spec === "allLineAndQuestionTo0") {
+      return compileValueTransform({ currentLine: 0, currentQuestion: 0 });
+    }
+    if (spec === "innerBlocksAsText") {
+      return {
+        transformValue: (domain, input) => {
+          if (input && (input.type === "currentLine" || input.type === "currentQuestion"
+              || input.type === "arithmetic" || input.type === "random"
+              || input.type === "answerValue" || input.type === "answerCharCount"
+              || input.type === "isQuestion" || input.type === "relationCheck")) {
+            // 内部积木视作纯文字：跳过原求值，返回 charCountText 字符串域。
+            const text = charCountText(input, {});
+            return { ok: true, type: "string", values: [text], source: "innerBlocksAsText" };
+          }
+          return domain;
+        }
       };
     }
     return null;
+    }
+    if (typeof spec === "object") {
+      return compileCondition(spec);
+    }
+    return null;
+  }
+
+  function normalizeRuntime(options) {
+    const userRuntime = (options && options.runtime) || {};
+    const runtime = {
+      transformPredicateResult: typeof userRuntime.transformPredicateResult === "function"
+        ? userRuntime.transformPredicateResult : null,
+      transformValue: typeof userRuntime.transformValue === "function"
+        ? userRuntime.transformValue : null,
+      transformAssignment: typeof userRuntime.transformAssignment === "function"
+        ? userRuntime.transformAssignment : null,
+      transformQuestion: typeof userRuntime.transformQuestion === "function"
+        ? userRuntime.transformQuestion : null,
+      resolveAnswer: typeof userRuntime.resolveAnswer === "function"
+        ? userRuntime.resolveAnswer : null,
+    };
+
+    if (options && typeof options.condition === "function") {
+      runtime.transformPredicateResult = options.condition;
+    }
+    return runtime;
+  }
+
+  // ===== 关卡条件 DSL 编译器 =====
+  // spec = { when?: { ... }, transform?: { ... } }
+  // 编译产物 = Runtime fragment { transformPredicateResult }
+
+  const VALID_WHEN_KEYS = new Set([
+    "charCount", "line", "questionNumber", "previousAnswer", "questionTextContains"
+  ]);
+  const VALID_TRANSFORM_KEYS = new Set(["flipTandF", "fix", "xorWithPrev"]);
+  const VALID_NUMERIC_OPS = new Set(["eq", "ne", "gt", "gte", "lt", "lte"]);
+  const VALID_FIX_CODES = new Set(["T", "F", "U"]);
+
+  function compileCondition(spec) {
+    if (!spec || typeof spec !== "object") return null;
+    const when = spec.when || {};
+    const transform = spec.transform || {};
+
+    if (typeof when !== "object") {
+      throw new Error("compileCondition: when 必须是对象");
+    }
+    if (typeof transform !== "object") {
+      throw new Error("compileCondition: transform 必须是对象");
+    }
+
+    validateWhenClause(when);
+    validateTransformClause(transform);
+
+    // 没指定任何 transform -> 等价于 passthrough，直接返回 null
+    if (Object.keys(transform).length === 0) return null;
+
+    return {
+      transformPredicateResult: (result, node, context) => {
+        if (!matchWhenClause(when, node, context)) return result;
+        return applyTransformClause(transform, result, context);
+      }
+    };
+  }
+
+  function validateWhenClause(when) {
+    for (const key of Object.keys(when)) {
+      if (!VALID_WHEN_KEYS.has(key)) {
+        throw new Error(`compileCondition: 未知的 when 子句 "${key}"`);
+      }
+      if (key === "questionTextContains" && typeof when[key] !== "string") {
+        throw new Error(`compileCondition: questionTextContains 必须是字符串`);
+      }
+      if (key === "previousAnswer") {
+        const spec = when[key];
+        if (!spec || typeof spec !== "object" || !VALID_FIX_CODES.has(spec.code)) {
+          throw new Error(`compileCondition: previousAnswer.code 必须是 "T"/"F"/"U"/"I" 之一`);
+        }
+      }
+      if (key === "charCount" || key === "line" || key === "questionNumber") {
+        validateNumericSpec(key, when[key]);
+      }
+    }
+  }
+
+  function validateNumericSpec(key, spec) {
+    if (!spec || typeof spec !== "object") {
+      throw new Error(`compileCondition: ${key} 必须是对象`);
+    }
+    for (const op of Object.keys(spec)) {
+      if (op !== "odd" && op !== "even" && !VALID_NUMERIC_OPS.has(op)) {
+        throw new Error(`compileCondition: ${key}.${op} 不是有效运算符`);
+      }
+      if ((op === "odd" || op === "even") && spec[op] !== true) {
+        throw new Error(`compileCondition: ${key}.${op} 必须为 true`);
+      }
+      if (VALID_NUMERIC_OPS.has(op) && typeof spec[op] !== "number") {
+        throw new Error(`compileCondition: ${key}.${op} 必须是数字`);
+      }
+    }
+  }
+
+  function validateTransformClause(transform) {
+    const keys = Object.keys(transform);
+    if (keys.length > 1) {
+      throw new Error(`compileCondition: transform 只能指定一个操作，当前: ${keys.join(", ")}`);
+    }
+    for (const key of keys) {
+      if (!VALID_TRANSFORM_KEYS.has(key)) {
+        throw new Error(`compileCondition: 未知的 transform 操作 "${key}"`);
+      }
+    }
+    if ("fix" in transform && !VALID_FIX_CODES.has(transform.fix)) {
+      throw new Error(`compileCondition: transform.fix 必须是 "T"/"F"/"U" 之一，收到 "${transform.fix}"`);
+    }
+    if ("flipTandF" in transform && transform.flipTandF !== true) {
+      throw new Error(`compileCondition: transform.flipTandF 必须为 true`);
+    }
+    if ("xorWithPrev" in transform && transform.xorWithPrev !== true) {
+      throw new Error(`compileCondition: transform.xorWithPrev 必须为 true`);
+    }
+  }
+
+  function matchWhenClause(when, node, context) {
+    for (const [key, value] of Object.entries(when)) {
+      if (!matchClause(key, value, node, context)) return false;
+    }
+    return true;
+  }
+
+  function matchClause(key, value, node, context) {
+    const ctx = context || {};
+    switch (key) {
+      case "charCount":
+        return node ? matchNumeric(countChars(charCountText(node, ctx)), value) : false;
+      case "line":
+        return matchNumeric(Number(ctx.line), value);
+      case "questionNumber":
+        return matchNumeric(Number(ctx.question), value);
+      case "previousAnswer": {
+        const prev = ctx.answers && ctx.answers[ctx.question - 2];
+        return Boolean(prev) && prev.code === value.code;
+      }
+      case "questionTextContains":
+        return node ? charCountText(node, ctx).includes(String(value)) : false;
+      default:
+        return false;
+    }
+  }
+
+  function matchNumeric(value, spec) {
+    if ("odd" in spec) {
+      return Number.isFinite(value) && Math.abs(value) % 2 === 1;
+    }
+    if ("even" in spec) {
+      return Number.isFinite(value) && Math.abs(value) % 2 === 0;
+    }
+    for (const op of Object.keys(spec)) {
+      const target = spec[op];
+      switch (op) {
+        case "eq": if (value !== target) return false; break;
+        case "ne": if (value === target) return false; break;
+        case "gt": if (!(value > target)) return false; break;
+        case "gte": if (!(value >= target)) return false; break;
+        case "lt": if (!(value < target)) return false; break;
+        case "lte": if (!(value <= target)) return false; break;
+      }
+    }
+    return true;
+  }
+
+  function applyTransformClause(transform, result, context) {
+    if ("flipTandF" in transform) return negateTandF(result);
+    if ("fix" in transform) {
+      return { ...result, code: transform.fix, label: LOGIC_LABELS[transform.fix] };
+    }
+    if ("xorWithPrev" in transform) return xorWithPrev(result, context);
+    return result;
+  }
+
+  function xorWithPrev(result, context) {
+    const ctx = context || {};
+    const prev = ctx.answers && ctx.answers[ctx.question - 2];
+    if (!prev) return result;
+    if (result.code === "U" || result.code === "I") return result;
+    if (prev.code === "U" || prev.code === "I") return result;
+    if (prev.code === "T") return negateTandF(result);
+    return result;
+  }
+
+  // ===== Stage 3: 变量/值变换 DSL =====
+
+  const VALID_VALUE_KEYS = ["currentLine", "currentQuestion", "answerCharCount", "shiftIntAtoms", "shiftFloatAtoms"];
+  const VALID_ASSIGNMENT_KEYS = ["shiftBy", "clampMin", "clampMax", "onlyIfNameMatches"];
+  const VALID_ANSWER_MODES = ["previousAnswer", "fixed", "rotate", "nth"];
+
+  function compileValueTransform(spec) {
+    if (!spec || typeof spec !== "object") return null;
+    validateKeySet(spec, VALID_VALUE_KEYS, "compileValueTransform");
+    for (const key of VALID_VALUE_KEYS) {
+      if (key in spec && (typeof spec[key] !== "number" || !Number.isFinite(spec[key]))) {
+        throw new Error(`compileValueTransform: ${key} 必须是有限数字`);
+      }
+    }
+    if (!VALID_VALUE_KEYS.some((k) => k in spec)) return null;
+
+    return {
+      transformValue: (domain, input) => {
+        if ("currentLine" in spec && input && input.type === "currentLine") {
+          return { ok: true, type: "int", values: [Number(spec.currentLine)], source: "overrideCurrentLine" };
+        }
+        if ("currentQuestion" in spec && input && input.type === "currentQuestion") {
+          return { ok: true, type: "int", values: [Number(spec.currentQuestion)], source: "overrideCurrentQuestion" };
+        }
+        if ("answerCharCount" in spec && input && input.type === "answerCharCount") {
+          return { ok: true, type: "int", values: [Number(spec.answerCharCount)], source: "overrideAnswerCharCount" };
+        }
+        if ("shiftIntAtoms" in spec && input && input.kind === "atom" && domain && domain.ok && domain.type === "int") {
+          // 跳过 $变量 引用（用户填入的"数值"只指字面量）
+          if (typeof input.value === "string" && input.value.startsWith("$")) return domain;
+          return {
+            ok: true, type: "int",
+            values: domain.values.map((v) => v + Number(spec.shiftIntAtoms)),
+            source: "shiftIntAtoms"
+          };
+        }
+        if ("shiftFloatAtoms" in spec && input && input.kind === "atom" && domain && domain.ok && domain.type === "float") {
+          if (typeof input.value === "string" && input.value.startsWith("$")) return domain;
+          return {
+            ok: true, type: "float",
+            values: domain.values.map((v) => v + Number(spec.shiftFloatAtoms)),
+            source: "shiftFloatAtoms"
+          };
+        }
+        return domain;
+      }
+    };
+  }
+
+  function compileAssignmentTransform(spec) {
+    if (!spec || typeof spec !== "object") return null;
+    validateKeySet(spec, VALID_ASSIGNMENT_KEYS, "compileAssignmentTransform");
+    for (const key of ["shiftBy", "clampMin", "clampMax"]) {
+      if (key in spec && (typeof spec[key] !== "number" || !Number.isFinite(spec[key]))) {
+        throw new Error(`compileAssignmentTransform: ${key} 必须是有限数字`);
+      }
+    }
+    if ("onlyIfNameMatches" in spec) {
+      const matcher = spec.onlyIfNameMatches;
+      if (!(matcher instanceof RegExp) && typeof matcher !== "string") {
+        throw new Error(`compileAssignmentTransform: onlyIfNameMatches 必须是字符串或正则`);
+      }
+    }
+    const hasNumeric = ["shiftBy", "clampMin", "clampMax"].some((k) => k in spec);
+    if (!hasNumeric && !("onlyIfNameMatches" in spec)) return null;
+
+    return {
+      transformAssignment: (name, domain) => {
+        if ("onlyIfNameMatches" in spec) {
+          const m = spec.onlyIfNameMatches;
+          const ok = m instanceof RegExp ? m.test(name) : String(name) === m || name.includes(m);
+          if (!ok) return domain;
+        }
+        if (!domain || !domain.ok || domain.type !== "int") return domain;
+        let values = domain.values.slice();
+        if ("shiftBy" in spec) values = values.map((v) => v + Number(spec.shiftBy));
+        if ("clampMin" in spec) values = values.map((v) => Math.max(v, Number(spec.clampMin)));
+        if ("clampMax" in spec) values = values.map((v) => Math.min(v, Number(spec.clampMax)));
+        return { ok: true, type: "int", values, source: "transformedAssignment" };
+      }
+    };
+  }
+
+  function validateKeySet(spec, validKeys, fnName) {
+    for (const key of Object.keys(spec)) {
+      if (!validKeys.includes(key)) {
+        throw new Error(`${fnName}: 未知的 key "${key}"`);
+      }
+    }
+  }
+
+  // ===== Stage 4: 回答解析 DSL =====
+
+  function compileAnswer(spec) {
+    if (!spec || typeof spec !== "object") return null;
+    if (!("mode" in spec)) return null;
+    const mode = spec.mode;
+    if (!VALID_ANSWER_MODES.includes(mode)) {
+      throw new Error(`compileAnswer: 未知的 mode "${mode}"`);
+    }
+
+    if (mode === "previousAnswer") {
+      return {
+        resolveAnswer: (_predicate, _env, context) => {
+          const prev = context && context.answers && context.answers[context.question - 2];
+          if (prev) return prev;
+          return logicError("没有上一问的回答");
+        }
+      };
+    }
+
+    if (mode === "fixed") {
+      if (!("code" in spec) || !["T", "F", "U"].includes(spec.code)) {
+        throw new Error(`compileAnswer: fixed 模式需要 code 为 "T"/"F"/"U" 之一`);
+      }
+      return {
+        resolveAnswer: () => ({
+          code: spec.code,
+          label: LOGIC_LABELS[spec.code],
+          detail: "固定回答",
+          stats: null
+        })
+      };
+    }
+
+    if (mode === "rotate") {
+      if (!Array.isArray(spec.cycle) || spec.cycle.length === 0) {
+        throw new Error(`compileAnswer: rotate 模式需要非空 cycle 数组`);
+      }
+      for (const code of spec.cycle) {
+        if (!["T", "F", "U"].includes(code)) {
+          throw new Error(`compileAnswer: cycle 元素必须是 "T"/"F"/"U" 之一，收到 "${code}"`);
+        }
+      }
+      return {
+        resolveAnswer: (_predicate, _env, context) => {
+          const q = Number(context && context.question) || 1;
+          const idx = (q - 1) % spec.cycle.length;
+          const code = spec.cycle[idx];
+          return { code, label: LOGIC_LABELS[code], detail: `rotate 第 ${idx + 1} 项`, stats: null };
+        }
+      };
+    }
+
+    if (mode === "nth") {
+      if (!Number.isInteger(spec.nth) || spec.nth < 1) {
+        throw new Error(`compileAnswer: nth 模式需要 nth 为正整数`);
+      }
+      return {
+        resolveAnswer: (_predicate, _env, context) => {
+          const ans = context && context.answers && context.answers[spec.nth - 1];
+          if (ans) return ans;
+          return logicError(`第 ${spec.nth} 问 尚未回答`);
+        }
+      };
+    }
+
+    return null;
+  }
+
+  // ===== Stage 3+4 合成器 =====
+
+  function buildRuntime(spec) {
+    if (!spec || typeof spec !== "object") return null;
+
+    const runtime = {
+      transformPredicateResult: null,
+      transformValue: null,
+      transformAssignment: null,
+      transformQuestion: null,
+      resolveAnswer: null,
+    };
+
+    if ("condition" in spec) {
+      const frag = compileCondition(spec.condition);
+      if (frag && frag.transformPredicateResult) {
+        runtime.transformPredicateResult = frag.transformPredicateResult;
+      }
+    }
+    if ("value" in spec) {
+      const frag = compileValueTransform(spec.value);
+      if (frag && frag.transformValue) {
+        runtime.transformValue = frag.transformValue;
+      }
+    }
+    if ("assignment" in spec) {
+      const frag = compileAssignmentTransform(spec.assignment);
+      if (frag && frag.transformAssignment) {
+        runtime.transformAssignment = frag.transformAssignment;
+      }
+    }
+    if ("answer" in spec) {
+      const frag = compileAnswer(spec.answer);
+      if (frag && frag.resolveAnswer) {
+        runtime.resolveAnswer = frag.resolveAnswer;
+      }
+    }
+
+    for (const key of ["transformPredicateResult", "transformValue", "transformAssignment", "transformQuestion", "resolveAnswer"]) {
+      if (typeof spec[key] === "function") {
+        runtime[key] = spec[key];
+      }
+    }
+
+    if (Object.values(runtime).every((v) => v === null)) return null;
+    return runtime;
   }
 
   function isQuestion(node, environment, context) {
@@ -373,6 +866,14 @@
   }
 
   function evaluateAnswerPredicate(predicate, environment, context) {
+    if (context?.runtime?.transformQuestion) {
+      try {
+        const transformed = context.runtime.transformQuestion(predicate, context);
+        if (transformed) predicate = transformed;
+      } catch (err) {
+        return logicError(err?.message || "问题变换失败");
+      }
+    }
     const candidates = [];
     const kept = [];
     for (const hypothesis of ["T", "F", "U"]) {
@@ -431,8 +932,9 @@
         return charCountText(node.slots?.left, context)
           + operatorLabel(node.operator, "predicate")
           + charCountText(node.slots?.right, context) + "吗?";
-      case "contains":
-        return charCountText(node.slots?.left, context) + "含有"
+      case "relationCheck":
+        return charCountText(node.slots?.left, context)
+          + (node.name || "")
           + charCountText(node.slots?.right, context) + "吗?";
       case "not":
         return charCountText(node.slots?.predicate, context) + "不成立" + "吗?";
@@ -520,7 +1022,13 @@
     const answerHistory = [];
     const questionPredicates = [];
     const MAX_LOOP_ITERATIONS = 64;
-    const conditionFn = typeof options.condition === "function" ? options.condition : null;
+    const runtime = normalizeRuntime(options);
+    // 运行时知识库：relations[name][leftKey][rightKey] = code；declaredRelations 为声明过的名字集合。
+    // 大于/等于/小于/含有 默认已声明，且可被覆写。
+    const relations = new Map();
+    const declaredRelations = new Set(["大于", "等于", "小于", "含有"]);
+    if (!runtime.relations) runtime.relations = relations;
+    if (!runtime.declaredRelations) runtime.declaredRelations = declaredRelations;
     let questionCount = 0;
 
     function snapshotEnvironment() {
@@ -554,9 +1062,18 @@
           const countContext = {
             answeredCount: questionCount,
             questionPredicates,
-            environment
+            environment,
+            runtime
           };
-          const result = evaluateInput(subCommand.slots?.value, environment, countContext);
+          let result = evaluateInput(subCommand.slots?.value, environment, countContext);
+          if (runtime.transformAssignment) {
+            try {
+              const transformed = runtime.transformAssignment(name, result, environment, countContext);
+              if (transformed) result = transformed;
+            } catch (err) {
+              result = valueError(err?.message || "赋值变换失败");
+            }
+          }
           environment.set(name, result);
           steps.push({ index: steps.length, line, type: "assign", name, result, scope: label });
           continue;
@@ -571,9 +1088,21 @@
             answers: answerHistory,
             questionPredicates,
             answeredCount: questionCount - 1,
-            condition: conditionFn
+            runtime
           };
-          const result = evaluateAnswerPredicate(subCommand.slots?.predicate, environment, context);
+          let result;
+          if (runtime.resolveAnswer) {
+            try {
+              result = runtime.resolveAnswer(subCommand.slots?.predicate, environment, context);
+              if (!result || typeof result.code !== "string") {
+                result = logicError("resolveAnswer 返回了非法的结果");
+              }
+            } catch (err) {
+              result = logicError(err?.message || "resolveAnswer 失败");
+            }
+          } else {
+            result = evaluateAnswerPredicate(subCommand.slots?.predicate, environment, context);
+          }
           answerHistory[questionCount - 1] = result;
           outputs.push({ index: steps.length, line, question: questionCount, result, scope: label });
           steps.push({ index: steps.length, line, question: questionCount, type: "answer", result, scope: label });
@@ -584,7 +1113,8 @@
           const countContext = {
             answeredCount: questionCount,
             questionPredicates,
-            environment
+            environment,
+            runtime
           };
           const countResult = evaluateInput(subCommand.slots?.count, environment, countContext);
           if (!countResult.ok || countResult.type !== "int") {
@@ -616,6 +1146,68 @@
           continue;
         }
 
+        if (subCommand.type === "declareRelation") {
+          const name = String(subCommand.name || "").trim();
+          if (!name) {
+            const failed = valueError("关系名不能为空");
+            steps.push({ index: steps.length, line, type: "declareRelation", name, result: failed, scope: label });
+            continue;
+          }
+          // 文档 4.13.2：游戏自带关系默认已声明，重复声明无副作用。
+          declaredRelations.add(name);
+          if (!relations.has(name)) relations.set(name, new Map());
+          const okResult = { ok: true, type: "int", values: [1], source: "declareRelation" };
+          steps.push({ index: steps.length, line, type: "declareRelation", name, result: okResult, scope: label });
+          continue;
+        }
+
+        if (subCommand.type === "overrideRelation") {
+          const name = String(subCommand.name || "").trim();
+          if (!name) {
+            const failed = valueError("关系名不能为空");
+            steps.push({ index: steps.length, line, type: "overrideRelation", name, result: failed, scope: label });
+            continue;
+          }
+          declaredRelations.add(name);
+          const valueContext = {
+            answeredCount: questionCount,
+            questionPredicates,
+            environment,
+            runtime
+          };
+          const leftResult = evaluateInput(subCommand.slots?.left, environment, valueContext);
+          if (!leftResult.ok) {
+            steps.push({ index: steps.length, line, type: "overrideRelation", name, result: leftResult, scope: label });
+            continue;
+          }
+          const rightResult = evaluateInput(subCommand.slots?.right, environment, valueContext);
+          if (!rightResult.ok) {
+            steps.push({ index: steps.length, line, type: "overrideRelation", name, result: rightResult, scope: label });
+            continue;
+          }
+          const code = subCommand.code || "T";
+          let inner = relations.get(name);
+          if (!inner) {
+            inner = new Map();
+            relations.set(name, inner);
+          }
+          for (const lv of leftResult.values) {
+            const lk = valueKey(lv);
+            let row = inner.get(lk);
+            if (!row) {
+              row = new Map();
+              inner.set(lk, row);
+            }
+            for (const rv of rightResult.values) {
+              const rk = valueKey(rv);
+              row.set(rk, code);
+            }
+          }
+          const okResult = { ok: true, type: "int", values: [1], source: "overrideRelation" };
+          steps.push({ index: steps.length, line, type: "overrideRelation", name, code, result: okResult, scope: label });
+          continue;
+        }
+
         steps.push({ index: steps.length, line, type: "unknown", result: valueError("无法执行的指令积木"), scope: label });
       }
     }
@@ -623,7 +1215,7 @@
     runSubCommands(commands, "顶层");
     void snapshotEnvironment;
 
-    return { environment, outputs, steps };
+    return { environment, outputs, steps, relations, declaredRelations };
   }
 
   function displayScalar(value, type) {
@@ -650,13 +1242,28 @@
   const COMMAND_KEYWORDS = {
     "回答": { type: "answer" },
     "赋值": { type: "assign" },
-    "重复": { type: "repeat" }
+    "重复": { type: "repeat" },
+    "声明": { type: "declareRelation" },
+    "覆写": { type: "overrideRelation" }
   };
 
   const PREDICATE_KEYWORDS = {
     "比较": { type: "compare", expects: ["left", "operator", "right"] },
-    "含有": { type: "contains", expects: ["left", "right"] },
     "不成立": { type: "not", expects: ["predicate"] }
+  };
+
+  const VALID_RELATION_CODES = ["T", "F", "U", "I"];
+  const RELATION_CODE_ALIASES = {
+    "是": "T",
+    "否": "F",
+    "不确定": "U",
+    "无法回答": "I"
+  };
+  const RELATION_CODE_ALIASES_REVERSE = {
+    "T": "是",
+    "F": "否",
+    "U": "不确定",
+    "I": "无法回答"
   };
 
   const VALUE_KEYWORDS = [
@@ -675,10 +1282,17 @@
   const COMPARE_OPERATORS = {
     "大于": "gt",
     "等于": "eq",
-    "小于": "lt"
+    "小于": "lt",
+    "含有": "contains"
   };
 
   function tokenize(source) {
+    // 4.0 文本表示：忽略全角/半角符号差异（括号、方括号统一为半角）。
+    const normalized = String(source ?? "")
+      .replace(/（/g, "(")
+      .replace(/）/g, ")")
+      .replace(/【/g, "[")
+      .replace(/】/g, "]");
     const tokens = [];
     let buffer = "";
     let i = 0;
@@ -690,8 +1304,8 @@
       }
     }
 
-    while (i < source.length) {
-      const char = source[i];
+    while (i < normalized.length) {
+      const char = normalized[i];
       if (char === " " || char === "\n" || char === "\t" || char === "，") {
         push();
         i += 1;
@@ -714,9 +1328,9 @@
       }
       if (char === "\"") {
         push();
-        let end = source.indexOf("\"", i + 1);
-        if (end < 0) end = source.length;
-        tokens.push({ kind: "word", value: source.slice(i, end + 1) });
+        let end = normalized.indexOf("\"", i + 1);
+        if (end < 0) end = normalized.length;
+        tokens.push({ kind: "word", value: normalized.slice(i, end + 1) });
         i = end + 1;
         continue;
       }
@@ -948,7 +1562,7 @@
         const node = { id: createTempId(), type: keyword.type, slots: {} };
         for (const slotName of keyword.expects) {
           if (slotName === "operator") {
-            const operator = expectWord("比较需要 大于/等于/小于 运算符");
+            const operator = expectWord("比较需要 大于/等于/小于/含有 运算符");
             if (!COMPARE_OPERATORS[operator.value]) {
               throw new ParseError(`未知的比较运算符 ${operator.value}`, position);
             }
@@ -972,6 +1586,20 @@
 
     function finishPredicateWithLeft(left) {
       const token = peek();
+      if (token && token.kind === "char" && token.value === VALUE_OPEN) {
+        // (name)(right) 吗? → relationCheck
+        take();
+        const nameToken = expectWord("关系判断需要 (关系名)");
+        expectChar(VALUE_CLOSE);
+        const right = parseValue();
+        if (peek() && peek().kind === "word" && peek().value === "吗?") take();
+        return {
+          id: createTempId(),
+          type: "relationCheck",
+          name: nameToken.value,
+          slots: { left, right }
+        };
+      }
       if (token && token.kind === "word" && COMPARE_OPERATORS[token.value]) {
         take();
         const node = {
@@ -983,33 +1611,23 @@
         if (peek() && peek().kind === "word" && peek().value === "吗?") take();
         return node;
       }
-      if (!token || token.kind !== "word" || !PREDICATE_KEYWORDS[token.value]) {
-        throw new ParseError("(value) 之后需要判断关键字（大于/等于/小于/含有）", position);
-      }
-      const keyword = PREDICATE_KEYWORDS[token.value];
-      if (keyword.type === "not") {
+      if (token && token.kind === "word" && token.value === "不成立") {
         throw new ParseError("不成立 应包裹在另一个判断积木中，不能作为 (value) 后的关键字", position);
       }
-      take();
-      const node = { id: createTempId(), type: keyword.type, slots: { left } };
-      for (const slotName of keyword.expects) {
-        if (slotName === "left" && node.slots.left) continue;
-        if (slotName === "operator") {
-          const operator = expectWord("比较需要 大于/等于/小于 运算符");
-          if (!COMPARE_OPERATORS[operator.value]) {
-            throw new ParseError(`未知的比较运算符 ${operator.value}`, position);
-          }
-          node.operator = COMPARE_OPERATORS[operator.value];
-          continue;
-        }
-        if (slotName === "predicate") {
-          node.slots[slotName] = parsePredicate();
-          continue;
-        }
-        node.slots[slotName] = parseValue();
+      if (token && token.kind === "word") {
+        // Any other bare word → relationCheck
+        const name = token.value;
+        take();
+        const right = parseValue();
+        if (peek() && peek().kind === "word" && peek().value === "吗?") take();
+        return {
+          id: createTempId(),
+          type: "relationCheck",
+          name,
+          slots: { left, right }
+        };
       }
-      if (peek() && peek().kind === "word" && peek().value === "吗?") take();
-      return node;
+      throw new ParseError("(value) 之后需要判断关键字（大于/等于/小于/含有 或 (关系名)）", position);
     }
 
     function parseScope() {
@@ -1072,7 +1690,65 @@
           body
         };
       }
+      if (keyword.type === "declareRelation") {
+        // 声明 (名称) 关系
+        const name = parseRelationName();
+        const tail = expectWord("声明 需要结尾的 “关系”");
+        if (tail.value !== "关系") {
+          throw new ParseError("声明 语法应为 “声明 (名称) 关系”", position);
+        }
+        return {
+          id: createTempId(),
+          type: "declareRelation",
+          name
+        };
+      }
+      if (keyword.type === "overrideRelation") {
+        // 覆写 (左值) (关系名) (右值) 为 (T/F/U/I 或 是/否/不确定/无法回答)
+        const left = parseValue();
+        const relationName = parseRelationName();
+        const right = parseValue();
+        const wei = expectWord("覆写 需要 “为”");
+        if (wei.value !== "为") {
+          throw new ParseError("覆写 语法应为 “覆写 (左值) (关系名) (右值) 为 (...)”", position);
+        }
+        // 允许可选的圆角括号包裹：既支持 "为 是"，也支持 "为 (是)"。
+        let codeToken;
+        if (peek() && peek().kind === "char" && peek().value === "(") {
+          take();
+          codeToken = expectWord("覆写 需要 (是/否/不确定/无法回答)");
+          expectChar(")");
+        } else {
+          codeToken = expectWord("覆写 需要 (是/否/不确定/无法回答)");
+        }
+        let code = null;
+        if (VALID_RELATION_CODES.includes(codeToken.value)) {
+          code = codeToken.value;
+        } else if (RELATION_CODE_ALIASES[codeToken.value]) {
+          code = RELATION_CODE_ALIASES[codeToken.value];
+        } else {
+          throw new ParseError(`覆写 需要 是/否/不确定/无法回答，收到 "${codeToken.value}"`, position);
+        }
+        return {
+          id: createTempId(),
+          type: "overrideRelation",
+          name: relationName,
+          code,
+          slots: { left, right }
+        };
+      }
       throw new ParseError("无法识别的指令类型", position);
+    }
+
+    function parseRelationName() {
+      const token = peek();
+      if (token && token.kind === "char" && token.value === VALUE_OPEN) {
+        take();
+        const name = expectWord("关系名");
+        expectChar(VALUE_CLOSE);
+        return name.value;
+      }
+      return expectWord("关系名").value;
     }
 
     function parseAssignName() {
@@ -1114,7 +1790,7 @@
     }
     if (node.type === "currentLine") return "(行号)";
     if (node.type === "currentQuestion") return "(问题编号)";
-    if (node.type === "compare" || node.type === "contains" || node.type === "not" || node.type === "isQuestion") {
+    if (node.type === "compare" || node.type === "not" || node.type === "isQuestion" || node.type === "relationCheck") {
       return `<${printPredicate(node)}>`;
     }
     return `(${printValue(node)})`;
@@ -1125,14 +1801,15 @@
     if (node.type === "compare") {
       return `${printValue(node.slots.left)} ${operatorLabel(node.operator, "predicate")} ${printValue(node.slots.right)} 吗?`;
     }
-    if (node.type === "contains") {
-      return `${printValue(node.slots.left)} 含有 ${printValue(node.slots.right)} 吗?`;
-    }
     if (node.type === "not") {
       return `${printPredicate(node.slots.predicate)} 不成立 吗?`;
     }
     if (node.type === "isQuestion") {
       return `第 ${printValue(node.slots.value)} 问`;
+    }
+    if (node.type === "relationCheck") {
+      const name = node.name || "";
+      return `${printValue(node.slots.left)} ${name} ${printValue(node.slots.right)} 吗?`;
     }
     return `<未知判断 ${node.type}>`;
   }
@@ -1149,13 +1826,22 @@
       const body = (command.body || []).map((entry) => `  ${printCommand(entry)}`).join("\n");
       return `[重复 ${printValue(command.slots.count)} {\n${body}\n}]`;
     }
+    if (command.type === "declareRelation") {
+      return `[声明 (${command.name || ""}) 关系]`;
+    }
+    if (command.type === "overrideRelation") {
+      const code = command.code || "T";
+      const name = command.name || "";
+      const codeLabel = RELATION_CODE_ALIASES_REVERSE[code] || code;
+      return `[覆写 ${printValue(command.slots.left)} ${name} ${printValue(command.slots.right)} 为 (${codeLabel})]`;
+    }
     return `[未知积木 ${command.type}]`;
   }
 
   function operatorLabel(operator, context) {
     const map = context === "value"
       ? { add: "加", sub: "减", mul: "乘", div: "除以" }
-      : { gt: "大于", eq: "等于", lt: "小于" };
+      : { gt: "大于", eq: "等于", lt: "小于", contains: "含有" };
     return map[operator] || operator;
   }
 
@@ -1174,6 +1860,12 @@
     negate,
     negateTandF,
     buildCondition,
+    compileCondition,
+    compileValueTransform,
+    compileAssignmentTransform,
+    compileAnswer,
+    buildRuntime,
+    normalizeRuntime,
     summarizeValue,
     variableNameIsValid,
     parse,

@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "levels": [
     {
       "id": "truth",
@@ -13,21 +13,9 @@
         "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]"
       ],
       "tests": [
-        {
-          "id": "t1",
-          "program": "[回答 <比较 (3) 大于 (2) 吗?>]",
-          "expectedOutputs": ["T"]
-        },
-        {
-          "id": "t2",
-          "program": "[回答 <比较 (1) 大于 (5) 吗?>]",
-          "expectedOutputs": ["F"]
-        },
-        {
-          "id": "t3",
-          "program": "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]",
-          "expectedOutputs": ["U"]
-        }
+        { "id": "t1", "program": "[回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t2", "program": "[回答 <比较 (1) 大于 (5) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t3", "program": "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]", "expectedOutputs": ["U"] }
       ]
     },
     {
@@ -42,21 +30,9 @@
         "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]"
       ],
       "tests": [
-        {
-          "id": "t1",
-          "program": "[回答 <比较 (3) 大于 (2) 吗?>]",
-          "expectedOutputs": ["F"]
-        },
-        {
-          "id": "t2",
-          "program": "[回答 <比较 (1) 大于 (5) 吗?>]",
-          "expectedOutputs": ["T"]
-        },
-        {
-          "id": "t3",
-          "program": "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]",
-          "expectedOutputs": ["U"]
-        }
+        { "id": "t1", "program": "[回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t2", "program": "[回答 <比较 (1) 大于 (5) 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t3", "program": "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]", "expectedOutputs": ["U"] }
       ]
     },
     {
@@ -72,26 +48,10 @@
         "[回答 <不成立 <比较 (3) 大于 (5) 吗?> 吗?>]"
       ],
       "tests": [
-        {
-          "id": "t1",
-          "program": "[回答 <比较 (3) 大于 (2) 吗?>]",
-          "expectedOutputs": ["T"]
-        },
-        {
-          "id": "t2",
-          "program": "[回答 <比较 (3) 大于 (5) 吗?>]",
-          "expectedOutputs": ["F"]
-        },
-        {
-          "id": "t3",
-          "program": "[回答 <不成立 <比较 (3) 大于 (2) 吗?> 吗?>]",
-          "expectedOutputs": ["T"]
-        },
-        {
-          "id": "t4",
-          "program": "[回答 <不成立 <比较 (3) 大于 (5) 吗?> 吗?>]",
-          "expectedOutputs": ["F"]
-        }
+        { "id": "t1", "program": "[回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t2", "program": "[回答 <比较 (3) 大于 (5) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t3", "program": "[回答 <不成立 <比较 (3) 大于 (2) 吗?> 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t4", "program": "[回答 <不成立 <比较 (3) 大于 (5) 吗?> 吗?>]", "expectedOutputs": ["F"] }
       ]
     },
     {
@@ -106,56 +66,77 @@
         "[回答 <比较 (3) 大于 (2) 吗?>]"
       ],
       "tests": [
-        {
-          "id": "t1",
-          "program": "[回答 <比较 (3) 大于 (2) 吗?>]",
-          "expectedOutputs": ["F"]
-        },
-        {
-          "id": "t2",
-          "program": "[回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>]",
-          "expectedOutputs": ["F", "T"]
-        },
-        {
-          "id": "t3",
-          "program": "[回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>]",
-          "expectedOutputs": ["F", "T", "F"]
-        }
+        { "id": "t1", "program": "[回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t2", "program": "[回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["F", "T"] },
+        { "id": "t3", "program": "[回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["F", "T", "F"] }
       ]
     },
     {
-      "id": "isAnswerIs",
-      "title": "有“是”则回答是",
-      "subtitle": "“是”字关",
-      "hint": "只要判断的文字里出现汉字“是”（包括引号里的字面值），最终答案都会被强制改为“是”。",
-      "condition": "isAnswerIs",
+      "id": "answerByPriority",
+      "title": "按优先级匹配",
+      "subtitle": "“是/否/不确定/无法回答”关",
+      "hint": "依次检查问题的文字是否包含关键字，命中即定答案：是 → 是；否 → 否；不确定 → 不确定；无法回答 → 无法回答。优先级从高到低。",
+      "condition": "answerByPriority",
       "demoProgram": [
         "[回答 <比较 (3) 大于 (2) 吗?>]",
         "[回答 <比较 (1) 大于 (5) 吗?>]",
-        "[回答 <比较 (\"是\") 等于 (\"否\") 吗?>]",
-        "[回答 <比较 (\"是\") 等于 (\"是\") 吗?>]"
+        "[回答 <比较 (\"是\") 含有 (\"否\") 吗?>]",
+        "[回答 <比较 (\"是\") 含有 (\"是\") 吗?>]"
       ],
       "tests": [
-        {
-          "id": "t1",
-          "program": "[回答 <比较 (3) 大于 (2) 吗?>]",
-          "expectedOutputs": ["T"]
-        },
-        {
-          "id": "t2",
-          "program": "[回答 <比较 (1) 大于 (5) 吗?>]",
-          "expectedOutputs": ["F"]
-        },
-        {
-          "id": "t3",
-          "program": "[回答 <比较 (\"是\") 等于 (\"是\") 吗?>]",
-          "expectedOutputs": ["T"]
-        },
-        {
-          "id": "t4",
-          "program": "[回答 <比较 (\"是\") 等于 (\"否\") 吗?>]",
-          "expectedOutputs": ["T"]
-        }
+        { "id": "t1", "program": "[回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t2", "program": "[回答 <比较 (1) 大于 (5) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t3", "program": "[回答 <比较 (\"是\") 含有 (\"否\") 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t4", "program": "[回答 <比较 (\"否\") 等于 (\"否\") 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t5", "program": "[回答 <比较 (\"不确定\") 等于 (\"不确定\") 吗?>]", "expectedOutputs": ["U"] },
+        { "id": "t6", "program": "[回答 <比较 (\"无法回答\") 等于 (\"无法回答\") 吗?>]", "expectedOutputs": ["I"] }
+      ]
+    },
+    {
+      "id": "allNumbersTo1",
+      "title": "所有数字改为 1",
+      "subtitle": "数值关",
+      "hint": "求值过程中出现的所有数值（整数与浮点数）都会被视为 1。注意只有数值会被替换；字符串不受影响。",
+      "condition": "allNumbersTo1",
+      "demoProgram": [
+        "[回答 <比较 (3) 大于 (2) 吗?>]",
+        "[回答 <比较 (从(5)到(10)的随机变量) 大于 (4) 吗?>]"
+      ],
+      "tests": [
+        { "id": "t1", "program": "[回答 <比较 (3) 大于 (2) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t2", "program": "[回答 <比较 (9) 大于 (1) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t3", "program": "[回答 <比较 (从(5)到(10)的随机变量) 大于 (4) 吗?>]", "expectedOutputs": ["F"] }
+      ]
+    },
+    {
+      "id": "allLineAndQuestionTo0",
+      "title": "行号与问题编号都是 0",
+      "subtitle": "行号关",
+      "hint": "无论在第几行、是第几问，行号与问题编号积木都返回 0；可以借此判断一个值是否被条件悄悄改写。",
+      "condition": "allLineAndQuestionTo0",
+      "demoProgram": [
+        "[回答 <比较 (行号) 等于 (0) 吗?>]",
+        "[回答 <比较 (问题编号) 等于 (0) 吗?>]"
+      ],
+      "tests": [
+        { "id": "t1", "program": "[回答 <比较 (行号) 等于 (0) 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t2", "program": "[回答 <比较 (问题编号) 等于 (0) 吗?>]", "expectedOutputs": ["T"] },
+        { "id": "t3", "program": "[回答 <比较 (行号) 大于 (问题编号) 吗?>]", "expectedOutputs": ["F"] }
+      ]
+    },
+    {
+      "id": "innerBlocksAsText",
+      "title": "内部积木视作纯文字",
+      "subtitle": "纯文字关",
+      "hint": "判断孔位里再嵌入其它积木时，那些内部积木不会真正求值，只会按“文字表示”参与运算。例如 <(<第(1)问>的答案)等于(是)吗？> 实际是把「第1问的答案」当成字符串再比较。",
+      "condition": "innerBlocksAsText",
+      "demoProgram": [
+        "[回答 <比较 (<第(1)问>的答案) 等于 (是) 吗?>]",
+        "[回答 <比较 (<第(1)问>的字数) 等于 (字数) 吗?>]"
+      ],
+      "tests": [
+        { "id": "t1", "program": "[回答 <比较 (<第(1)问>的答案) 等于 (是) 吗?>]", "expectedOutputs": ["F"] },
+        { "id": "t2", "program": "[回答 <比较 (<第(1)问>的字数) 含有 (字数) 吗?>]", "expectedOutputs": ["T"] }
       ]
     }
   ]

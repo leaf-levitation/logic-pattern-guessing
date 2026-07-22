@@ -14,7 +14,11 @@
     { value: "alwaysLie", label: "一律说谎" },
     { value: "lieIfLong", label: "按字数说谎（≥10 反转）" },
     { value: "lieIfOddLine", label: "按行号说谎（奇数行反转）" },
-    { value: "isAnswerIs", label: "有「是」则回答是" }
+    { value: "answerByPriority", label: "按优先级匹配（是/否/不确定/无法回答）" },
+    { value: "isAnswerIs", label: "[兼容] 有「是」则回答是" },
+    { value: "allNumbersTo1", label: "所有数字改为 1" },
+    { value: "allLineAndQuestionTo0", label: "行号与问题编号都是 0" },
+    { value: "innerBlocksAsText", label: "内部积木视作纯文字" }
   ];
 
   const ANSWER_CODES = ["T", "F", "U", "I"];
