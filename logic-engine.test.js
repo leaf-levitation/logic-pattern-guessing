@@ -754,6 +754,24 @@ test("关卡条件：allNumbersTo1 不改变答案类型（int 仍为 int）", (
   assert.equal(execution.outputs[0].result.code, "F");
 });
 
+test("关卡条件：allNumbersTo1 只改写文字表示，不影响 arithmetic 求值结果", () => {
+  // 细则 3.6.1：((1) 加 (1)) 中 1+1 求值得到的 2 不应改为 1。
+  const runtime = engine.buildCondition("allNumbersTo1");
+  const program = engine.parse("[回答 <比较 ((1) 加 (1)) 大于 (2) 吗?>]");
+  const execution = engine.execute(program, { runtime });
+  // 左边 1+1 真实求得 2；右边 (2) 是字面量 → 1；2>1 = T
+  assert.equal(execution.outputs[0].result.code, "T");
+});
+
+test("关卡条件：allNumbersTo1 不改写 random 求值范围", () => {
+  // 细则 3.6.2：random 的起点、终点是 arithmetic 时，结果仍按完整区间取。
+  const runtime = engine.buildCondition("allNumbersTo1");
+  // 从(5)到((1)加(2))的随机变量：(5)→1，(1)+(2)=3，范围 [1,3] 共 3 种取值，与 (2)→1 比较：1>1=F, 2>1=T, 3>1=T，混合 → U
+  const program = engine.parse("[回答 <比较 (从(5)到((1)加(2))的随机变量) 大于 (2) 吗?>]");
+  const execution = engine.execute(program, { runtime });
+  assert.equal(execution.outputs[0].result.code, "U");
+});
+
 test("关卡条件：allLineAndQuestionTo0 让 (行号)/(问题编号) 永远返回 0", () => {
   const runtime = engine.buildCondition("allLineAndQuestionTo0");
   const program = engine.parse([

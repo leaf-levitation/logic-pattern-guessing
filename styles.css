@@ -1289,6 +1289,39 @@ body.is-dragging .trash-zone {
   color: var(--ink);
 }
 
+.clear-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 16px;
+  border: 1.5px solid var(--danger);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 130ms ease, color 130ms ease;
+}
+
+.clear-button:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.clear-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.clear-button:disabled:hover {
+  background: #fff;
+  color: var(--danger);
+}
+
 .text-modal-tip {
   margin: 0 0 10px;
   color: var(--muted);
@@ -2253,6 +2286,82 @@ body.is-dragging .trash-zone {
   padding: 0;
 }
 
+.window-body--col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ===== Checkpoint input window (per-question prediction) ===== */
+.checkpoint-program {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px 12px;
+  overflow: auto;
+  flex: 0 1 auto;
+  max-height: 56%;
+  min-height: 80px;
+  background: #fbfcfe;
+  border-bottom: 1px solid var(--line);
+}
+
+.checkpoint-program .command-entry--readonly {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.checkpoint-program .command-entry--readonly .command-index {
+  background: #eef0f6;
+  border-radius: 6px;
+}
+
+.checkpoint-divider {
+  padding: 8px 18px 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.checkpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 18px 8px;
+  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.checkpoint-row {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.checkpoint-row-head {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.window-body--padded .checkpoint-foot {
+  border-top: 1px solid var(--soft-line);
+  padding: 12px 18px 14px;
+  margin: 12px 0 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* ===== Level picker window ===== */
 .level-picker-list {
   display: grid;
@@ -2400,9 +2509,11 @@ body.is-dragging .trash-zone {
 .text-window-root {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   height: 100%;
   min-height: 0;
+  padding: 12px 14px 14px;
+  box-sizing: border-box;
 }
 
 .text-window-root .text-modal-tip {

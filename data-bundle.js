@@ -4,141 +4,151 @@
 (function () {
   const levels = [
     {
-      id: "truth",
-      title: "按事实回答",
-      subtitle: "入门关",
-      hint: "本关不做任何处理。运行工作台上的示例，看每个判断积木返回的 T / F / U / I 就是最直接的事实。",
-      condition: "truth",
-      demoProgram: [
+      "id": "truth",
+      "title": "教程",
+      "subtitle": "",
+      "hint": "本关无条件",
+      "condition": "truth",
+      "demoProgram": [
         "[回答 <比较 (3) 大于 (2) 吗?>]",
         "[回答 <比较 (3) 大于 (5) 吗?>]",
         "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]"
       ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["T"] },
-        { id: "t2", program: "[回答 <比较 (1) 大于 (5) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t3", program: "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]", expectedOutputs: ["U"] }
+      "tests": [
+        {
+          "id": "t1",
+          "program": "[赋值 (a) = (5)]\n[赋值 (b) = (从(1)到(5)的随机变量)]\n[回答 <($a) 大于 ($b) 吗?>]\n[回答 <(1+1) 等于 (2) 吗?>]\n[回答 <比较 (从(1.5)到(2.5)的随机变量) 大于 (2) 吗?>]\n[回答 <($b) 小于 (问题编号) 吗?>]\n[回答 <($b) 含有 (b) 吗?>]\n[回答 <($b) 小于 (问题编号) 吗?>]",
+          "expectedOutputs": [
+            "U",
+            "I",
+            "F",
+            "U",
+            "F",
+            "U"
+          ]
+        }
       ]
     },
     {
-      id: "alwaysLie",
-      title: "一律说谎",
-      subtitle: "反转关",
-      hint: "每个判断积木在求值后，T 和 F 都会被立刻反转，U 与 I 保持不变。试着对比输出与“真值”差在哪里。",
-      condition: "alwaysLie",
-      demoProgram: [
+      "id": "alwaysLie",
+      "title": "第3关",
+      "subtitle": "",
+      "hint": "",
+      "condition": "alwaysLie",
+      "demoProgram": [
         "[回答 <比较 (3) 大于 (2) 吗?>]",
         "[回答 <比较 (3) 大于 (5) 吗?>]",
         "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]"
       ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t2", program: "[回答 <比较 (1) 大于 (5) 吗?>]", expectedOutputs: ["T"] },
-        { id: "t3", program: "[回答 <比较 (从(1)到(3)的随机变量) 大于 (2) 吗?>]", expectedOutputs: ["U"] }
+      "tests": [
+        {
+          "id": "t1",
+          "program": "[赋值 (a) = (10)]\n[赋值 (b) = (从(1)到(10)的随机变量)]\n[回答 <($a) 大于 ($b) 吗?>]\n[回答 <比较 (1) 大于 (5) 吗?>]\n[回答 <<(3) 大于 (2) 吗?> 不成立 吗?>]\n[回答 <第 (3) 问>]",
+          "expectedOutputs": [
+            "U",
+            "T",
+            "F",
+            "T"
+          ]
+        }
       ]
     },
     {
-      id: "lieIfLong",
-      title: "按字数说谎",
-      subtitle: "字数关",
-      hint: "统计每个判断的文字长度（忽略空格、括号、$）。字数 ≥ 10 时，该判断的 T / F 会被反转。",
-      condition: "lieIfLong",
-      demoProgram: [
+      "id": "lieIfLong",
+      "title": "真·第3关",
+      "subtitle": "",
+      "hint": "",
+      "condition": "lieIfLong",
+      "demoProgram": [
         "[回答 <比较 (3) 大于 (2) 吗?>]",
         "[回答 <比较 (3) 大于 (5) 吗?>]",
         "[回答 <不成立 <比较 (3) 大于 (2) 吗?> 吗?>]",
         "[回答 <不成立 <比较 (3) 大于 (5) 吗?> 吗?>]"
       ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["T"] },
-        { id: "t2", program: "[回答 <比较 (3) 大于 (5) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t3", program: "[回答 <不成立 <比较 (3) 大于 (2) 吗?> 吗?>]", expectedOutputs: ["T"] },
-        { id: "t4", program: "[回答 <不成立 <比较 (3) 大于 (5) 吗?> 吗?>]", expectedOutputs: ["F"] }
+      "tests": [
+        {
+          "id": "t1",
+          "program": "[赋值 (a) = (10)]\n[赋值 (b) = (从(1)到(10)的随机变量)]\n[回答 <($a) 大于 ($b) 吗?>]\n[回答 <($a) 大于 (1000000) 吗?>]\n[回答 <(1000000) 大于 ($b) 吗?>]\n[回答 <<(3) 大于 (2) 吗?> 不成立 吗?>]",
+          "expectedOutputs": [
+            "U",
+            "T",
+            "F",
+            "T"
+          ]
+        }
       ]
     },
     {
-      id: "lieIfOddLine",
-      title: "按行号说谎",
-      subtitle: "行号关",
-      hint: "每个回答积木在工作区里都有行号，从 1 开始数。位于奇数行的判断 T / F 被反转，偶数行照常回答。",
-      condition: "lieIfOddLine",
-      demoProgram: [
+      "id": "lieIfOddLine",
+      "title": "不认真的回答者",
+      "subtitle": "",
+      "hint": "",
+      "condition": "lieIfOddLine",
+      "demoProgram": [
         "[回答 <比较 (3) 大于 (2) 吗?>]",
         "[回答 <比较 (3) 大于 (2) 吗?>]",
         "[回答 <比较 (3) 大于 (2) 吗?>]"
       ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t2", program: "[回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["F", "T"] },
-        { id: "t3", program: "[回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>] [回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["F", "T", "F"] }
+      "tests": [
+        {
+          "id": "t2",
+          "program": "[回答 <比较 (3) 大于 (2) 吗?>] \n[回答 <<(3) 大于 (2) 吗?> 不成立 吗?>]\n[回答<第(1)问>]\n[回答<第(2)问>]\n[回答<第(3)问>]",
+          "expectedOutputs": [
+            "F",
+            "F",
+            "T",
+            "F",
+            "F"
+          ]
+        }
       ]
     },
     {
-      id: "answerByPriority",
-      title: "按优先级匹配",
-      subtitle: "“是/否/不确定/无法回答”关",
-      hint: "依次检查问题的文字是否包含关键字，命中即定答案：是 → 是；否 → 否；不确定 → 不确定；无法回答 → 无法回答。优先级从高到低。",
-      condition: "answerByPriority",
-      demoProgram: [
-        "[回答 <比较 (3) 大于 (2) 吗?>]",
-        "[回答 <比较 (1) 大于 (5) 吗?>]",
-        "[回答 <比较 (\"是\") 含有 (\"否\") 吗?>]",
-        "[回答 <比较 (\"是\") 含有 (\"是\") 吗?>]"
+      "id": "level-uqk4ms",
+      "title": "回答",
+      "subtitle": "",
+      "hint": "",
+      "condition": "answerByPriority",
+      "demoProgram": [
+        "[回答 <比较 (3) 大于 (4) 吗?>]",
+        "[回答 <(<第 (1) 问>的答案) 等于 (是) 吗?>] ",
+        "[回答 <(<第 (1) 问>的答案) 等于 (否) 吗?>] "
       ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["T"] },
-        { id: "t2", program: "[回答 <比较 (1) 大于 (5) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t3", program: "[回答 <比较 (\"是\") 含有 (\"否\") 吗?>]", expectedOutputs: ["T"] },
-        { id: "t4", program: "[回答 <比较 (\"否\") 等于 (\"否\") 吗?>]", expectedOutputs: ["F"] },
-        { id: "t5", program: "[回答 <比较 (\"不确定\") 等于 (\"不确定\") 吗?>]", expectedOutputs: ["U"] },
-        { id: "t6", program: "[回答 <比较 (\"无法回答\") 等于 (\"无法回答\") 吗?>]", expectedOutputs: ["I"] }
+      "tests": [
+        {
+          "id": "test-1308",
+          "program": "[声明 (是) 关系]\n[覆写 (1) 是 (数字) 为 (是)]\n[覆写 (a) 是 (数字) 为 (否)]\n[回答 <(1) 是 (数字) 吗?>] \n[回答 <(a) 是 (数字) 吗?>] \n[回答 <(1) 不是 (数字) 吗?>]\n[回答 <(<(从(1)到(3)的随机变量) 大于 (1) 吗?>的答案) 等于 (不确定) 吗?>] \n[回答 <(<(从(1)到(3)的随机变量) 大于 (1) 吗?>的答案) 等于 (<(1) 大于 (2) 吗?>的答案) 吗?>] ",
+          "expectedOutputs": [
+            "T",
+            "T",
+            "T",
+            "U",
+            "F"
+          ]
+        }
       ]
     },
     {
-      id: "allNumbersTo1",
-      title: "所有数字改为 1",
-      subtitle: "数值关",
-      hint: "求值过程中出现的所有数值（整数与浮点数）都会被视为 1。注意只有数值会被替换；字符串不受影响。",
-      condition: "allNumbersTo1",
-      demoProgram: [
-        "[回答 <比较 (3) 大于 (2) 吗?>]",
-        "[回答 <比较 (从(5)到(10)的随机变量) 大于 (4) 吗?>]"
+      "id": "level-ecpvbw",
+      "title": "算术1",
+      "subtitle": "",
+      "hint": "",
+      "condition": "allNumbersTo1",
+      "demoProgram": [
+        "[回答 <(3) 大于 (2) 吗?>]",
+        "[回答 <(从(1)到(10)的随机变量) 大于 (5)吗?>]"
       ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (3) 大于 (2) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t2", program: "[回答 <比较 (9) 大于 (1) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t3", program: "[回答 <比较 (从(5)到(10)的随机变量) 大于 (4) 吗?>]", expectedOutputs: ["F"] }
-      ]
-    },
-    {
-      id: "allLineAndQuestionTo0",
-      title: "行号与问题编号都是 0",
-      subtitle: "行号关",
-      hint: "无论在第几行、是第几问，行号与问题编号积木都返回 0；可以借此判断一个值是否被条件悄悄改写。",
-      condition: "allLineAndQuestionTo0",
-      demoProgram: [
-        "[回答 <比较 (行号) 等于 (0) 吗?>]",
-        "[回答 <比较 (问题编号) 等于 (0) 吗?>]"
-      ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (行号) 等于 (0) 吗?>]", expectedOutputs: ["T"] },
-        { id: "t2", program: "[回答 <比较 (问题编号) 等于 (0) 吗?>]", expectedOutputs: ["T"] },
-        { id: "t3", program: "[回答 <比较 (行号) 大于 (问题编号) 吗?>]", expectedOutputs: ["F"] }
-      ]
-    },
-    {
-      id: "innerBlocksAsText",
-      title: "内部积木视作纯文字",
-      subtitle: "纯文字关",
-      hint: "判断孔位里再嵌入其它积木时，那些内部积木不会真正求值，只会按“文字表示”参与运算。例如 <(<第(1)问>的答案)等于(是)吗？> 实际是把「第1问的答案」当成字符串再比较。",
-      condition: "innerBlocksAsText",
-      demoProgram: [
-        "[回答 <比较 (<第(1)问>的答案) 等于 (是) 吗?>]",
-        "[回答 <比较 (<第(1)问>的字数) 等于 (字数) 吗?>]"
-      ],
-      tests: [
-        { id: "t1", program: "[回答 <比较 (<第(1)问>的答案) 等于 (是) 吗?>]", expectedOutputs: ["F"] },
-        { id: "t2", program: "[回答 <比较 (<第(1)问>的字数) 含有 (字数) 吗?>]", expectedOutputs: ["T"] }
+      "tests": [
+        {
+          "id": "test-679a",
+          "program": "[回答 <((1) 加 (1)) 等于 (2) 吗?>]  \n[回答 <(<第 (1) 问>的字数) 大于 (10) 吗?>]  \n[回答 <(<第 (2) 问>的字数) 大于 (10) 吗?>]  \n[回答 <第 (4) 问>]",
+          "expectedOutputs": [
+            "F",
+            "T",
+            "T",
+            "F"
+          ]
+        }
       ]
     }
   ];

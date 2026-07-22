@@ -924,14 +924,6 @@
       if (testMode) makeReadOnly(block);
       entry.append(indexBadge, block);
       elements.commandStack.append(entry);
-
-      if (testMode && command.type === "answer") {
-        const meta = predictionByNodeId.get(command.id);
-        if (meta) {
-          const predRow = makePredictionRow(meta.testIndex, meta.qIdx);
-          elements.commandStack.append(predRow);
-        }
-      }
     });
 
     elements.emptyWorkspace.hidden = commands.length > 0;
@@ -1169,10 +1161,7 @@
 
   function printTabCommands(cmds) {
     if (!Array.isArray(cmds) || !cmds.length) return "";
-    const lineMap = buildLineMap(cmds);
-    return cmds
-      .map((cmd) => engine.printCommand(cmd, lineMap.get(cmd.id) || null))
-      .join("\n");
+    return cmds.map((cmd) => engine.printCommand(cmd)).join("\n");
   }
 
   function programToText() {
@@ -1245,6 +1234,10 @@
 
     const actions = document.createElement("div");
     actions.className = "text-window-actions";
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.className = "button button-ghost";
+    refreshBtn.textContent = "刷新";
     const applyBtn = document.createElement("button");
     applyBtn.type = "button";
     applyBtn.className = "button button-ghost";
@@ -1253,10 +1246,10 @@
     copyBtn.type = "button";
     copyBtn.className = "button button-ghost";
     copyBtn.textContent = "复制文本";
-    actions.append(applyBtn, copyBtn);
+    actions.append(refreshBtn, applyBtn, copyBtn);
     root.append(actions);
 
-    return { root, textarea, errorBox, applyBtn, copyBtn };
+    return { root, textarea, errorBox, refreshBtn, applyBtn, copyBtn };
   }
 
   function openTextWindow() {
@@ -1269,7 +1262,7 @@
       onMount: ({ windowEl, bodyEl }) => {
         bodyEl.classList.add("window-body--padded");
         bodyEl.innerHTML = "";
-        const { root, textarea, errorBox, applyBtn, copyBtn } = buildTextWindowBody();
+        const { root, textarea, errorBox, refreshBtn, applyBtn, copyBtn } = buildTextWindowBody();
         bodyEl.append(root);
         textarea.value = programToText();
         textWindowRefs = {
@@ -1281,6 +1274,15 @@
         };
         applyBtn.addEventListener("click", () => applyTextProgram());
         copyBtn.addEventListener("click", () => copyTextProgram());
+        refreshBtn.addEventListener("click", () => {
+          const fresh = programToText();
+          textarea.value = fresh;
+          renderTextErrors(errorBox, "");
+          textarea.focus();
+          textarea.setSelectionRange(0, 0);
+          textarea.scrollTop = 0;
+          showToast("已重新载入工作区积木");
+        });
         textarea.addEventListener("keydown", (event) => {
           if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
             event.preventDefault();
@@ -1299,10 +1301,7 @@
 
   function applyTextProgram() {
     if (!textWindowRefs) return;
-    if (testMode) {
-      showToast("通关检测模式下不可改写工作区");
-      return;
-    }
+    if (testMode) return;
     const rawText = textWindowRefs.inputEl.value;
     if (!rawText.trim()) {
       assignCommands([]);
@@ -1711,10 +1710,7 @@
   }
 
   function loadExample() {
-    if (testMode) {
-      showToast("通关检测模式下不可改写工作区");
-      return;
-    }
+    if (testMode) return;
     const chance = createNode("random");
     chance.slots.from = atom("0");
     chance.slots.to = atom("9");
@@ -1960,7 +1956,9 @@
       cleanupDrag();
     }
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-      runWorkspace();
+      if (elements.runButton?.disabled) return;
+      if (testMode) submitAllAndExit();
+      else runWorkspace();
     }
   });
 
@@ -2466,6 +2464,140 @@
     setStatus("idle", "等待作答");
   }
 
+  function openCheckpointWindow() {
+    const level = currentLevel();
+    if (!level) {
+      showToast("请先选择一关");
+      return;
+    }
+    if (!level.tests || !level.tests.length) {
+      showToast("当前关卡暂无预测题");
+      return;
+    }
+    enterTestMode();
+    if (!testMode) return;
+
+    const storedBucket = () => {
+      const levelBucket = testPredictionsByLevel[currentLevelId] || {};
+      const firstQ = [...predictionByNodeId.values()][0];
+      if (!firstQ) return [];
+      return Array.isArray(levelBucket[firstQ.testId]) ? levelBucket[firstQ.testId] : [];
+    };
+
+    openWindow({
+      id: "checkpoint-input",
+      title: `通关检测 · ${level.title}`,
+      icon: "✓",
+      width: 560,
+      height: 540,
+      onMount: ({ windowEl, bodyEl }) => {
+        bodyEl.classList.add("window-body--padded");
+        bodyEl.classList.add("window-body--col");
+
+        if (elements.runButton) {
+          elements.runButton.disabled = true;
+          elements.runButton.classList.add("is-disabled");
+          elements.runButton.setAttribute("aria-disabled", "true");
+        }
+
+        const programArea = document.createElement("div");
+        programArea.className = "checkpoint-program";
+        if (commands.length) {
+          commands.forEach((cmd, idx) => {
+            const entry = document.createElement("div");
+            entry.className = "command-entry command-entry--readonly";
+            const badge = document.createElement("span");
+            badge.className = "command-index";
+            badge.textContent = String(idx + 1).padStart(2, "0");
+            entry.append(badge, renderBlock(cmd, { preview: true }));
+            programArea.append(entry);
+          });
+        } else {
+          const empty = document.createElement("p");
+          empty.className = "text-modal-tip";
+          empty.textContent = "当前题目没有需要预测的回答。";
+          programArea.append(empty);
+        }
+        bodyEl.append(programArea);
+
+        const divider = document.createElement("div");
+        divider.className = "checkpoint-divider";
+        divider.textContent = "请预测每一问的回答";
+        bodyEl.append(divider);
+
+        const list = document.createElement("div");
+        list.className = "checkpoint-list";
+        bodyEl.append(list);
+
+        const refreshList = () => {
+          list.replaceChildren();
+          const ordered = [...predictionByNodeId.entries()]
+            .map(([nodeId, info]) => ({ nodeId, ...info }))
+            .sort((a, b) => a.qIdx - b.qIdx);
+          const bucket = storedBucket();
+          if (!ordered.length) {
+            const empty = document.createElement("p");
+            empty.className = "text-modal-tip";
+            empty.textContent = "当前题目没有需要预测的回答。";
+            list.append(empty);
+            return;
+          }
+          ordered.forEach((entry) => {
+            const card = document.createElement("div");
+            card.className = "checkpoint-row";
+
+            const head = document.createElement("div");
+            head.className = "checkpoint-row-head";
+            head.textContent = `第 ${entry.qIdx + 1} 问`;
+            card.append(head);
+
+            const group = makeChoiceGroup(bucket[entry.qIdx] || null, (code) => {
+              const levelBucket = testPredictionsByLevel[currentLevelId] || {};
+              const tEntry = levelBucket[entry.testId] ? levelBucket[entry.testId].slice() : [];
+              tEntry[entry.qIdx] = code;
+              levelBucket[entry.testId] = tEntry;
+              testPredictionsByLevel[currentLevelId] = levelBucket;
+              saveStoredPredictions();
+            });
+            card.append(group);
+
+            list.append(card);
+          });
+        };
+        refreshList();
+
+        const actions = document.createElement("div");
+        actions.className = "checkpoint-foot";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "button button-ghost";
+        cancelBtn.textContent = "放弃检测";
+        cancelBtn.addEventListener("click", () => {
+          exitTestMode();
+          closeWindow("checkpoint-input");
+        });
+        const submitBtn = document.createElement("button");
+        submitBtn.type = "button";
+        submitBtn.className = "button button-primary";
+        submitBtn.textContent = "提交预测";
+        submitBtn.addEventListener("click", () => {
+          submitAllAndExit();
+          closeWindow("checkpoint-input");
+        });
+        actions.append(cancelBtn, submitBtn);
+        bodyEl.append(actions);
+      },
+      onClose: () => {
+        if (testMode) exitTestMode();
+        if (elements.runButton) {
+          elements.runButton.disabled = false;
+          elements.runButton.classList.remove("is-disabled");
+          elements.runButton.removeAttribute("aria-disabled");
+        }
+      }
+    });
+  }
+
   function exitTestMode() {
     if (!testMode) return;
     testMode = false;
@@ -2774,7 +2906,7 @@
   const MENU_WINDOW_HANDLERS = {
     "level-picker": openLevelPickerWindow,
     "level-hint": openLevelHintWindow,
-    "checkpoint": enterTestMode,
+    "checkpoint": openCheckpointWindow,
     "level-editor": openLevelEditorWindow,
     "text-format": openTextWindow,
     "variables": openVariablesWindow,

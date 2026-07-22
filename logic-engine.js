@@ -399,7 +399,10 @@
     }
     if (spec === "allNumbersTo1") {
       return {
-        transformValue: (domain) => {
+        transformValue: (domain, input) => {
+          // 只改写字面量 atom：把文字表示里的数字变成 1。
+          // 不影响求值过程产生的数值（arithmetic、random、currentLine 等）。
+          if (!input || input.kind !== "atom") return domain;
           if (!domain || !domain.ok) return domain;
           if (domain.type !== "int" && domain.type !== "float") return domain;
           return { ...domain, values: [1], source: "allNumbersTo1" };
